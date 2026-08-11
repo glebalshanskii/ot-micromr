@@ -35,6 +35,8 @@ TOP_LEVEL_KEYS = {
 }
 
 ANALYTICAL_EXPERIMENTS = {"ANA-SMOKE-001", "ANA-FIG3-001"}
+SIMULATION_EXPERIMENTS = {"SIM-MOMENTS-001", "SIM-UNBALANCED-001"}
+SUPPORTED_EXPERIMENTS = ANALYTICAL_EXPERIMENTS | SIMULATION_EXPERIMENTS
 
 
 def _deep_freeze(value: Any) -> Any:
@@ -141,6 +143,21 @@ def _string_sequence(table: Mapping[str, Any], key: str, path: str) -> tuple[str
     return tuple(value)
 
 
+def _number_sequence(table: Mapping[str, Any], key: str, path: str) -> tuple[float, ...]:
+    value = table.get(key)
+    if not isinstance(value, list) or not value:
+        raise ConfigError(f"{path}.{key}: expected non-empty number array")
+    result: list[float] = []
+    for index, item in enumerate(value):
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            raise ConfigError(f"{path}.{key}[{index}]: expected number")
+        number = float(item)
+        if not math.isfinite(number):
+            raise ConfigError(f"{path}.{key}[{index}]: expected finite number")
+        result.append(number)
+    return tuple(result)
+
+
 def _validate_finite_tree(value: Any, path: str = "RunSpec") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -157,20 +174,23 @@ def _validate_common(data: Mapping[str, Any]) -> None:
     if _string(data, "schema_version", "RunSpec") != "runspec-v1":
         raise ConfigError("RunSpec.schema_version: expected 'runspec-v1'")
     experiment_id = _string(data, "experiment_id", "RunSpec")
-    if experiment_id not in ANALYTICAL_EXPERIMENTS:
+    if experiment_id not in SUPPORTED_EXPERIMENTS:
         raise ConfigError(
-            f"RunSpec.experiment_id: P2 validator supports only {sorted(ANALYTICAL_EXPERIMENTS)}; "
-            "SIM contracts become executable in P3"
+            f"RunSpec.experiment_id: executable validator supports only {sorted(SUPPORTED_EXPERIMENTS)}"
         )
     if _string(data, "track", "RunSpec") != "synthetic":
-        raise ConfigError("RunSpec.track: analytical P2 experiments require 'synthetic'")
+        raise ConfigError("RunSpec.track: executable synthetic experiments require 'synthetic'")
     if _string(data, "mode", "RunSpec") != "paper-faithful":
-        raise ConfigError("RunSpec.mode: analytical P2 experiments require 'paper-faithful'")
+        raise ConfigError("RunSpec.mode: executable synthetic experiments require 'paper-faithful'")
     _string(data, "objective", "RunSpec")
     _string_sequence(data, "claim_ids", "RunSpec")
     if _boolean(data, "orders_enabled", "RunSpec"):
-        raise ConfigError("RunSpec.orders_enabled: analytical experiments cannot create orders")
+        raise ConfigError("RunSpec.orders_enabled: current executable experiments cannot create orders")
     _boolean(data, "claim_eligible", "RunSpec")
+
+    if experiment_id in SIMULATION_EXPERIMENTS:
+        _validate_simulation_common(data, experiment_id)
+        return
 
     seed = _table(data, "seed_policy")
     _expect_keys(seed, {"rng_used", "rng_algorithm", "seeds", "mapping"}, "RunSpec.seed_policy")
@@ -230,6 +250,306 @@ def _validate_common(data: Mapping[str, Any]) -> None:
     optional = artifacts.get("optional_classes")
     if not isinstance(optional, list) or any(not isinstance(item, str) or not item for item in optional):
         raise ConfigError("RunSpec.artifacts.optional_classes: expected string array")
+
+
+def _validate_simulation_common(data: Mapping[str, Any], experiment_id: str) -> None:
+    seed = _table(data, "seed_policy")
+    _expect_keys(
+        seed,
+        {"rng_used", "rng_algorithm", "seeds", "mapping", "bootstrap_seed", "stream_mapping_version"},
+        "RunSpec.seed_policy",
+    )
+    if not _boolean(seed, "rng_used", "RunSpec.seed_policy"):
+        raise ConfigError("RunSpec.seed_policy.rng_used: simulation requires true")
+    if _string(seed, "rng_algorithm", "RunSpec.seed_policy") != "numpy.random.PCG64DXSM":
+        raise ConfigError("RunSpec.seed_policy.rng_algorithm: expected 'numpy.random.PCG64DXSM'")
+    seeds = seed.get("seeds")
+    if (
+        not isinstance(seeds, list)
+        or len(seeds) != 20
+        or any(isinstance(item, bool) or not isinstance(item, int) or item <= 0 for item in seeds)
+        or len(set(seeds)) != len(seeds)
+    ):
+        raise ConfigError("RunSpec.seed_policy.seeds: expected 20 unique positive integer seeds")
+    _string(seed, "mapping", "RunSpec.seed_policy")
+    _integer(seed, "bootstrap_seed", "RunSpec.seed_policy", positive=True)
+    if _string(seed, "stream_mapping_version", "RunSpec.seed_policy") != "single_policy_seedsequence_spawn_v1":
+        raise ConfigError("RunSpec.seed_policy.stream_mapping_version: unexpected mapping")
+
+    units = _table(data, "units")
+    _expect_keys(units, {"time", "price", "quantity", "cash", "timezone", "normalization"}, "RunSpec.units")
+    expected_units = {
+        "time": "second",
+        "price": "synthetic_price_unit",
+        "quantity": "lot",
+        "cash": "synthetic_quote_currency",
+        "timezone": "UTC",
+    }
+    for key, expected in expected_units.items():
+        if _string(units, key, "RunSpec.units") != expected:
+            raise ConfigError(f"RunSpec.units.{key}: expected {expected!r}")
+    expected_normalization = (
+        "alpha_equals_one_reference_instance"
+        if experiment_id == "SIM-MOMENTS-001"
+        else "tight_response_alpha_equals_one_unbalanced_control"
+    )
+    if _string(units, "normalization", "RunSpec.units") != expected_normalization:
+        raise ConfigError(f"RunSpec.units.normalization: expected {expected_normalization!r}")
+
+    inputs = _table(data, "inputs")
+    input_keys = {
+        "source_kind",
+        "paper_version",
+        "paper_pdf_sha256",
+        "protocol_path",
+        "parameter_provenance",
+        "dataset",
+        "dataset_reason",
+    }
+    if experiment_id == "SIM-UNBALANCED-001":
+        input_keys |= {"experiment_role", "base_experiment_id"}
+    _expect_keys(inputs, input_keys, "RunSpec.inputs")
+    if _string(inputs, "source_kind", "RunSpec.inputs") != "paper_model_project_parameters":
+        raise ConfigError("RunSpec.inputs.source_kind: expected paper_model_project_parameters")
+    if _string(inputs, "paper_version", "RunSpec.inputs") != "arXiv:2608.00885v1":
+        raise ConfigError("RunSpec.inputs.paper_version: unexpected paper version")
+    paper_hash = _string(inputs, "paper_pdf_sha256", "RunSpec.inputs")
+    if len(paper_hash) != 64 or any(char not in "0123456789abcdef" for char in paper_hash):
+        raise ConfigError("RunSpec.inputs.paper_pdf_sha256: expected lowercase SHA-256")
+    for key in ("protocol_path", "parameter_provenance", "dataset_reason"):
+        _string(inputs, key, "RunSpec.inputs")
+    if _string(inputs, "dataset", "RunSpec.inputs") != "not_applicable":
+        raise ConfigError("RunSpec.inputs.dataset: expected 'not_applicable'")
+    if experiment_id == "SIM-UNBALANCED-001":
+        if _string(inputs, "experiment_role", "RunSpec.inputs") != "extension_negative_control":
+            raise ConfigError("RunSpec.inputs.experiment_role: expected extension_negative_control")
+        if _string(inputs, "base_experiment_id", "RunSpec.inputs") != "SIM-MOMENTS-001":
+            raise ConfigError("RunSpec.inputs.base_experiment_id: expected SIM-MOMENTS-001")
+
+    for section in ("strategy", "execution"):
+        table = _table(data, section)
+        _expect_keys(table, {"enabled", "reason"}, f"RunSpec.{section}")
+        if _boolean(table, "enabled", f"RunSpec.{section}"):
+            raise ConfigError(f"RunSpec.{section}.enabled: P3 dynamics experiments require false")
+        _string(table, "reason", f"RunSpec.{section}")
+
+    artifacts = _table(data, "artifacts")
+    _expect_keys(artifacts, {"output_root", "required_classes", "optional_classes"}, "RunSpec.artifacts")
+    if _string(artifacts, "output_root", "RunSpec.artifacts") != "outputs":
+        raise ConfigError("RunSpec.artifacts.output_root: expected repository-local 'outputs'")
+    required = _string_sequence(artifacts, "required_classes", "RunSpec.artifacts")
+    expected_required = {
+        "source_config",
+        "resolved_runspec",
+        "manifest",
+        "log",
+        "metrics_summary",
+        "metrics_raw",
+        "table",
+        "figure_data",
+        "figure",
+        "event_log",
+    }
+    if set(required) != expected_required:
+        raise ConfigError("RunSpec.artifacts.required_classes: unexpected P3 artifact contract")
+    optional = artifacts.get("optional_classes")
+    if not isinstance(optional, list) or optional:
+        raise ConfigError("RunSpec.artifacts.optional_classes: expected empty array")
+
+
+def _validate_simulation_numerics(data: Mapping[str, Any], experiment_id: str) -> None:
+    numerics = _table(data, "numerics")
+    keys = {
+        "float_dtype",
+        "simulation_algorithm",
+        "alpha_ref_per_second",
+        "primary_resolution_epsilon",
+        "refinement_epsilons",
+        "max_time_step_rule",
+        "max_event_probability_rule",
+        "event_probability_formula",
+        "event_type_probability",
+        "continuous_crossing_detection",
+        "crossing_time_approximation",
+        "flat_entry_tree_depth_rule",
+        "event_and_crossing_tie_break",
+        "observation_boundary_handling",
+        "invariant_suite_id",
+        "diagnostic_quantile_probabilities",
+    }
+    _expect_keys(numerics, keys, "RunSpec.numerics")
+    expected_strings = {
+        "float_dtype": "float64",
+        "simulation_algorithm": "adaptive_left_hazard_single_jump_v1",
+        "event_probability_formula": "1 - exp(-lambda_total_left * dt_seconds)",
+        "event_type_probability": "lambda_event_left / lambda_total_left",
+        "event_and_crossing_tie_break": "brownian_crossing_then_book_event_at_equal_timestamp",
+        "invariant_suite_id": "jump_simulator_invariants_v1",
+    }
+    for key, expected in expected_strings.items():
+        if _string(numerics, key, "RunSpec.numerics") != expected:
+            raise ConfigError(f"RunSpec.numerics.{key}: expected {expected!r}")
+    for key in (
+        "max_time_step_rule",
+        "max_event_probability_rule",
+        "continuous_crossing_detection",
+        "crossing_time_approximation",
+        "flat_entry_tree_depth_rule",
+        "observation_boundary_handling",
+    ):
+        _string(numerics, key, "RunSpec.numerics")
+    alpha_ref = _number(numerics, "alpha_ref_per_second", "RunSpec.numerics", positive=True)
+    expected_alpha_ref = 1.0 if experiment_id == "SIM-MOMENTS-001" else 1.25
+    if alpha_ref != expected_alpha_ref:
+        raise ConfigError(f"RunSpec.numerics.alpha_ref_per_second: expected {expected_alpha_ref}")
+    if _number(numerics, "primary_resolution_epsilon", "RunSpec.numerics", positive=True) != 0.01:
+        raise ConfigError("RunSpec.numerics.primary_resolution_epsilon: expected 0.01")
+    if _number_sequence(numerics, "refinement_epsilons", "RunSpec.numerics") != (0.02, 0.01, 0.005):
+        raise ConfigError("RunSpec.numerics.refinement_epsilons: expected [0.02, 0.01, 0.005]")
+    quantiles = _number_sequence(numerics, "diagnostic_quantile_probabilities", "RunSpec.numerics")
+    if quantiles != (0.0, 0.25, 0.5, 0.9, 0.95, 0.99, 1.0):
+        raise ConfigError("RunSpec.numerics.diagnostic_quantile_probabilities: unexpected grid")
+
+
+def _validate_initial_state(model: Mapping[str, Any], delta: float) -> None:
+    initial = _table(model, "initial_state", "RunSpec.model")
+    keys = {
+        "time_seconds",
+        "mid_half_ticks",
+        "efficient_price",
+        "inventory_lots",
+        "mid_marked_wealth_quote_currency",
+        "efficient_price_marked_wealth_quote_currency",
+        "state_representation",
+        "derived_bid_price_assertion",
+        "derived_spread_price_assertion",
+        "derived_mid_price_assertion",
+        "derived_gap_price_assertion",
+    }
+    _expect_keys(initial, keys, "RunSpec.model.initial_state")
+    if _number(initial, "time_seconds", "RunSpec.model.initial_state") != 0.0:
+        raise ConfigError("RunSpec.model.initial_state.time_seconds: expected 0")
+    if _integer(initial, "mid_half_ticks", "RunSpec.model.initial_state") != 1:
+        raise ConfigError("RunSpec.model.initial_state.mid_half_ticks: expected 1")
+    efficient = _number(initial, "efficient_price", "RunSpec.model.initial_state")
+    if _integer(initial, "inventory_lots", "RunSpec.model.initial_state") != 0:
+        raise ConfigError("RunSpec.model.initial_state.inventory_lots: expected 0")
+    for key in (
+        "mid_marked_wealth_quote_currency",
+        "efficient_price_marked_wealth_quote_currency",
+        "derived_bid_price_assertion",
+        "derived_gap_price_assertion",
+    ):
+        if _number(initial, key, "RunSpec.model.initial_state") != 0.0:
+            raise ConfigError(f"RunSpec.model.initial_state.{key}: expected 0")
+    if efficient != delta / 2.0:
+        raise ConfigError("RunSpec.model.initial_state.efficient_price: expected delta/2")
+    if _number(initial, "derived_spread_price_assertion", "RunSpec.model.initial_state") != delta:
+        raise ConfigError("RunSpec.model.initial_state.derived_spread_price_assertion: expected delta")
+    if _number(initial, "derived_mid_price_assertion", "RunSpec.model.initial_state") != delta / 2.0:
+        raise ConfigError("RunSpec.model.initial_state.derived_mid_price_assertion: expected delta/2")
+    _string(initial, "state_representation", "RunSpec.model.initial_state")
+
+
+def _validate_simulation_model(data: Mapping[str, Any], experiment_id: str) -> None:
+    model = _table(data, "model")
+    balanced_keys = {
+        "enabled",
+        "delta_price",
+        "sigma_x_price_per_sqrt_second",
+        "mu_s_per_second",
+        "mu_o_per_second",
+        "mu_c_per_second",
+        "alpha_s_per_second",
+        "alpha_o_per_second",
+        "alpha_c_per_second",
+        "alpha_per_second",
+        "balanced_response_constraint",
+        "initial_state",
+    }
+    unbalanced_keys = {
+        "enabled",
+        "delta_price",
+        "sigma_x_price_per_sqrt_second",
+        "mu_s_per_second",
+        "mu_o_per_second",
+        "mu_c_per_second",
+        "alpha_s_per_second",
+        "alpha_o_per_second",
+        "alpha_c_per_second",
+        "tight_drift_coefficient_per_second",
+        "open_drift_coefficient_per_second",
+        "one_factor_change",
+        "initial_state",
+    }
+    _expect_keys(model, balanced_keys if experiment_id == "SIM-MOMENTS-001" else unbalanced_keys, "RunSpec.model")
+    if not _boolean(model, "enabled", "RunSpec.model"):
+        raise ConfigError("RunSpec.model.enabled: simulation model must be enabled")
+    positive_keys = (
+        "delta_price",
+        "sigma_x_price_per_sqrt_second",
+        "mu_s_per_second",
+        "mu_o_per_second",
+        "mu_c_per_second",
+        "alpha_s_per_second",
+        "alpha_c_per_second",
+    )
+    values = {key: _number(model, key, "RunSpec.model", positive=True) for key in positive_keys}
+    alpha_o = _number(model, "alpha_o_per_second", "RunSpec.model")
+    if alpha_o < 0.0:
+        raise ConfigError("RunSpec.model.alpha_o_per_second: expected nonnegative number")
+    delta = values["delta_price"]
+    tight_alpha = 2.0 * values["alpha_s_per_second"] + alpha_o
+    if experiment_id == "SIM-MOMENTS-001":
+        alpha = _number(model, "alpha_per_second", "RunSpec.model", positive=True)
+        _string(model, "balanced_response_constraint", "RunSpec.model")
+        if not (tight_alpha == values["alpha_c_per_second"] == alpha):
+            raise ConfigError("RunSpec.model: balanced response identity is violated")
+    else:
+        tight_declared = _number(model, "tight_drift_coefficient_per_second", "RunSpec.model", positive=True)
+        open_declared = _number(model, "open_drift_coefficient_per_second", "RunSpec.model", positive=True)
+        if tight_declared != tight_alpha or open_declared != values["alpha_c_per_second"]:
+            raise ConfigError("RunSpec.model: unbalanced drift coefficients disagree with primitives")
+        if tight_declared != 1.0 or open_declared != 1.25:
+            raise ConfigError("RunSpec.model: unexpected one-factor control coefficients")
+        _string(model, "one_factor_change", "RunSpec.model")
+    _validate_initial_state(model, delta)
+
+
+def _validate_simulation_section(data: Mapping[str, Any], experiment_id: str) -> None:
+    simulation = _table(data, "simulation")
+    keys = {
+        "enabled",
+        "burn_in_reversion_times",
+        "horizon_reversion_times",
+        "replications",
+        "event_log",
+        "observation_interval_reversion_times",
+        "simultaneous_book_events_allowed",
+        "strategy_monitoring_enabled",
+    }
+    if experiment_id == "SIM-UNBALANCED-001":
+        keys.add("reference_reversion_rate_per_second")
+    _expect_keys(simulation, keys, "RunSpec.simulation")
+    if not _boolean(simulation, "enabled", "RunSpec.simulation"):
+        raise ConfigError("RunSpec.simulation.enabled: expected true")
+    if _number(simulation, "burn_in_reversion_times", "RunSpec.simulation", positive=True) != 100.0:
+        raise ConfigError("RunSpec.simulation.burn_in_reversion_times: expected 100")
+    if _number(simulation, "horizon_reversion_times", "RunSpec.simulation", positive=True) != 2000.0:
+        raise ConfigError("RunSpec.simulation.horizon_reversion_times: expected 2000")
+    if _integer(simulation, "replications", "RunSpec.simulation", positive=True) != 20:
+        raise ConfigError("RunSpec.simulation.replications: expected 20")
+    if not _boolean(simulation, "event_log", "RunSpec.simulation"):
+        raise ConfigError("RunSpec.simulation.event_log: expected true")
+    if _number(simulation, "observation_interval_reversion_times", "RunSpec.simulation", positive=True) != 0.01:
+        raise ConfigError("RunSpec.simulation.observation_interval_reversion_times: expected 0.01")
+    if _boolean(simulation, "simultaneous_book_events_allowed", "RunSpec.simulation"):
+        raise ConfigError("RunSpec.simulation.simultaneous_book_events_allowed: expected false")
+    if _boolean(simulation, "strategy_monitoring_enabled", "RunSpec.simulation"):
+        raise ConfigError("RunSpec.simulation.strategy_monitoring_enabled: P3 dynamics requires false")
+    if experiment_id == "SIM-UNBALANCED-001":
+        if _number(simulation, "reference_reversion_rate_per_second", "RunSpec.simulation", positive=True) != 1.0:
+            raise ConfigError("RunSpec.simulation.reference_reversion_rate_per_second: expected 1")
 
 
 def _validate_numerics(data: Mapping[str, Any], experiment_id: str) -> None:
@@ -413,16 +733,150 @@ def _validate_fig3(data: Mapping[str, Any]) -> None:
         _boolean(acceptance, key, "RunSpec.acceptance")
 
 
+def _validate_simulation_evaluation(data: Mapping[str, Any], experiment_id: str) -> None:
+    evaluation = _table(data, "evaluation")
+    common = {"primary_metric", "metrics", "aggregation", "confidence_interval", "multiplicity"}
+    if experiment_id == "SIM-MOMENTS-001":
+        keys = common | {
+            "bootstrap_replications",
+            "sampling_rule",
+            "stationary_variance_estimator",
+            "stationary_mean_normalization",
+            "jump_variance_rate_estimator",
+            "variance_identity_signed_relative_residual",
+            "open_close_flow_signed_relative_residual",
+            "finite_h_drift_estimator",
+            "finite_h_drift_target_per_second",
+            "generator_drift_check",
+            "binned_drift_role",
+            "drift_gap_bin_scaling",
+            "acf_estimator",
+            "simultaneous_interval_construction",
+            "resolution_difference_se",
+            "drift_gap_bin_edges_s_g",
+            "acf_lags_reversion_times",
+            "minimum_pooled_observations_per_drift_bin_and_parity",
+            "minimum_observations_per_seed_and_parity_for_slope",
+            "refinement_metrics",
+        }
+    else:
+        keys = common | {
+            "sampling_rule",
+            "generator_drift_estimator",
+            "finite_h_drift_estimator",
+            "finite_h_contrast",
+            "minimum_observations_per_seed_and_parity_for_slope",
+            "resolution_difference_se",
+        }
+    _expect_keys(evaluation, keys, "RunSpec.evaluation")
+    for key in keys:
+        if key in {
+            "metrics",
+            "refinement_metrics",
+            "drift_gap_bin_edges_s_g",
+            "acf_lags_reversion_times",
+            "bootstrap_replications",
+            "minimum_pooled_observations_per_drift_bin_and_parity",
+            "minimum_observations_per_seed_and_parity_for_slope",
+        }:
+            continue
+        _string(evaluation, key, "RunSpec.evaluation")
+    _string_sequence(evaluation, "metrics", "RunSpec.evaluation")
+    _integer(
+        evaluation,
+        "minimum_observations_per_seed_and_parity_for_slope",
+        "RunSpec.evaluation",
+        positive=True,
+    )
+    if experiment_id == "SIM-MOMENTS-001":
+        if _integer(evaluation, "bootstrap_replications", "RunSpec.evaluation", positive=True) != 10000:
+            raise ConfigError("RunSpec.evaluation.bootstrap_replications: expected 10000")
+        _integer(
+            evaluation,
+            "minimum_pooled_observations_per_drift_bin_and_parity",
+            "RunSpec.evaluation",
+            positive=True,
+        )
+        edges = _number_sequence(evaluation, "drift_gap_bin_edges_s_g", "RunSpec.evaluation")
+        if any(right <= left for left, right in zip(edges, edges[1:])):
+            raise ConfigError("RunSpec.evaluation.drift_gap_bin_edges_s_g: edges must increase")
+        lags = _number_sequence(evaluation, "acf_lags_reversion_times", "RunSpec.evaluation")
+        if any(lag <= 0.0 for lag in lags):
+            raise ConfigError("RunSpec.evaluation.acf_lags_reversion_times: lags must be positive")
+        _string_sequence(evaluation, "refinement_metrics", "RunSpec.evaluation")
+
+    acceptance = _table(data, "acceptance")
+    if experiment_id == "SIM-MOMENTS-001":
+        numeric_keys = {
+            "parity_violation_count_max",
+            "illegal_transition_count_max",
+            "negative_intensity_count_max",
+            "nonzero_inactive_intensity_count_max",
+            "invariant_violation_count_max",
+            "nonfinite_value_count_max",
+            "multiple_book_event_step_count_max",
+            "deterministic_replay_mismatch_count_max",
+            "generator_drift_abs_residual_max",
+            "stationary_mean_gap_abs_over_s_g_max",
+            "stationary_variance_identity_relative_error_max",
+            "open_close_flow_relative_error_max",
+            "conditional_drift_slope_relative_error_max",
+            "refinement_each_metric_abs_difference_max",
+        }
+        boolean_keys = {
+            "require_theoretical_drift_slopes_inside_simultaneous_95_percent_interval",
+            "require_theoretical_acf_inside_simultaneous_95_percent_interval",
+            "refinement_threshold_may_be_replaced_by_difference_se",
+            "require_all_20_replications",
+            "require_clean_tree_for_claim",
+            "stop_on_invariant_violation",
+            "stop_on_nonfinite_value",
+        }
+        string_keys = {"refinement_difference_se_rule"}
+    else:
+        numeric_keys = {
+            "invariant_violation_count_max",
+            "generator_tight_drift_slope_abs_error_max",
+            "generator_open_drift_slope_abs_error_max",
+            "generator_drift_abs_residual_max",
+            "finite_h_parity_contrast_one_sided_95_percent_lower_bound_min_per_second",
+            "refinement_primary_metric_abs_difference_max_per_second",
+        }
+        boolean_keys = {
+            "refinement_threshold_may_be_replaced_by_difference_se",
+            "require_all_20_replications",
+            "require_clean_tree_for_claim",
+            "stop_on_invariant_violation",
+            "stop_on_nonfinite_value",
+        }
+        string_keys = {"refinement_difference_se_rule"}
+    _expect_keys(acceptance, numeric_keys | boolean_keys | string_keys, "RunSpec.acceptance")
+    for key in numeric_keys:
+        value = _number(acceptance, key, "RunSpec.acceptance")
+        if value < 0.0:
+            raise ConfigError(f"RunSpec.acceptance.{key}: expected nonnegative number")
+    for key in boolean_keys:
+        _boolean(acceptance, key, "RunSpec.acceptance")
+    for key in string_keys:
+        _string(acceptance, key, "RunSpec.acceptance")
+
+
 def validate_runspec(data: Mapping[str, Any]) -> None:
     _validate_finite_tree(data)
     _validate_common(data)
     experiment_id = str(data["experiment_id"])
-    _validate_numerics(data, experiment_id)
-    _validate_model(data, experiment_id)
-    if experiment_id == "ANA-SMOKE-001":
-        _validate_smoke(data)
+    if experiment_id in ANALYTICAL_EXPERIMENTS:
+        _validate_numerics(data, experiment_id)
+        _validate_model(data, experiment_id)
+        if experiment_id == "ANA-SMOKE-001":
+            _validate_smoke(data)
+        else:
+            _validate_fig3(data)
     else:
-        _validate_fig3(data)
+        _validate_simulation_numerics(data, experiment_id)
+        _validate_simulation_model(data, experiment_id)
+        _validate_simulation_section(data, experiment_id)
+        _validate_simulation_evaluation(data, experiment_id)
 
 
 def discover_repository_root(start: Path) -> Path:

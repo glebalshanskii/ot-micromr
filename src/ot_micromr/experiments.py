@@ -34,6 +34,7 @@ from ot_micromr.artifacts import (
 )
 from ot_micromr.config import RunSpec
 from ot_micromr.errors import ExperimentError
+from ot_micromr.simulation_experiments import evaluate_simulation
 
 
 @dataclass(frozen=True, slots=True)
@@ -379,7 +380,7 @@ def evaluate_fig3(spec: RunSpec, run_directory: Path) -> EvaluationResult:
 
 
 def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str, bool]:
-    paths_by_class = {
+    paths_by_class: dict[str, list[Path]] = {
         "source_config": [run_directory / "source_config.toml"],
         "resolved_runspec": [run_directory / "resolved_runspec.json"],
         "manifest": [run_directory / "manifest.json"],
@@ -393,6 +394,19 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
         ],
         "figure": [run_directory / "figures" / "figure3.png"],
     }
+    if spec.experiment_id in {"SIM-MOMENTS-001", "SIM-UNBALANCED-001"}:
+        figure_name = (
+            "sim-moments.png" if spec.experiment_id == "SIM-MOMENTS-001" else "sim-unbalanced.png"
+        )
+        paths_by_class.update(
+            {
+                "metrics_raw": [run_directory / "metrics" / "seed_metrics.csv"],
+                "table": [run_directory / "tables" / "resolution_summary.csv"],
+                "figure_data": [run_directory / "figures" / "simulation-data.csv"],
+                "figure": [run_directory / "figures" / figure_name],
+                "event_log": [run_directory / "records" / "book_events.csv"],
+            }
+        )
     result: dict[str, bool] = {}
     for artifact_class in spec.values["artifacts"]["required_classes"]:
         if artifact_class == "manifest":
@@ -471,6 +485,8 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_smoke(spec)
         elif spec.experiment_id == "ANA-FIG3-001":
             evaluation = evaluate_fig3(spec, run_directory)
+        elif spec.experiment_id in {"SIM-MOMENTS-001", "SIM-UNBALANCED-001"}:
+            evaluation = evaluate_simulation(spec, run_directory)
         else:
             raise ExperimentError(f"experiment runner is not implemented: {spec.experiment_id}")
         metrics = evaluation.metrics
@@ -552,7 +568,11 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             "rng_used": spec.values["seed_policy"]["rng_used"],
             "rng_algorithm": spec.values["seed_policy"]["rng_algorithm"],
             "seed_to_replication": [
-                {"seed": int(seed), "replication": index, "consumed": False}
+                {
+                    "seed": int(seed),
+                    "replication": index,
+                    "consumed": bool(spec.values["seed_policy"]["rng_used"]),
+                }
                 for index, seed in enumerate(spec.values["seed_policy"]["seeds"])
             ],
         },
