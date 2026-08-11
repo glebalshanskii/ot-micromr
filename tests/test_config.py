@@ -97,6 +97,18 @@ class RunSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "strategy.enabled: EMP-DATA-001 requires false"):
             validate_runspec(data)
 
+    def test_p6_synthetic_filter_contract_validates(self) -> None:
+        spec = load_runspec(
+            REPOSITORY_ROOT / "cfg" / "experiments" / "filter_syn_001.toml"
+        )
+        self.assertEqual(spec.values["track"], "synthetic")
+        self.assertEqual(spec.values["numerics"]["compute_device"], "cuda")
+
+        data = load_data("filter_syn_001.toml")
+        data["strategy"]["enabled"] = True
+        with self.assertRaisesRegex(ConfigError, "strategy.enabled: FILTER-SYN-001"):
+            validate_runspec(data)
+
     def test_unknown_simulation_field_is_rejected(self) -> None:
         data = load_data("sim_moments_002.toml")
         data["simulation"]["implicit_dt"] = 0.1

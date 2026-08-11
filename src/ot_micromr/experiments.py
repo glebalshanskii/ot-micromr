@@ -35,6 +35,7 @@ from ot_micromr.artifacts import (
 from ot_micromr.config import RunSpec
 from ot_micromr.errors import ExperimentError
 from ot_micromr.empirical_data import evaluate_empirical_data
+from ot_micromr.efficient_price import evaluate_synthetic_filter
 from ot_micromr.figure4_experiments import evaluate_figure4
 from ot_micromr.simulation_experiments import evaluate_simulation
 
@@ -447,6 +448,16 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                 ],
             }
         )
+    if spec.experiment_id == "FILTER-SYN-001":
+        paths_by_class.update(
+            {
+                "metrics_raw": [
+                    run_directory / "metrics" / "session_metrics.csv",
+                    run_directory / "metrics" / "replay.json",
+                ],
+                "table": [run_directory / "tables" / "inference.csv"],
+            }
+        )
     result: dict[str, bool] = {}
     for artifact_class in spec.values["artifacts"]["required_classes"]:
         if artifact_class == "manifest":
@@ -531,6 +542,8 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_figure4(spec, run_directory)
         elif spec.experiment_id == "EMP-DATA-001":
             evaluation = evaluate_empirical_data(spec, run_directory)
+        elif spec.experiment_id == "FILTER-SYN-001":
+            evaluation = evaluate_synthetic_filter(spec, run_directory)
         else:
             raise ExperimentError(f"experiment runner is not implemented: {spec.experiment_id}")
         metrics = evaluation.metrics
@@ -577,6 +590,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
 
     is_figure4 = spec.experiment_id == "SIM-FIG4-002"
     is_empirical_data = spec.experiment_id == "EMP-DATA-001"
+    is_filter_synthetic = spec.experiment_id == "FILTER-SYN-001"
     numerics_manifest = (
         {
             "market_float_dtype": spec.values["numerics"]["market_float_dtype"],
@@ -585,11 +599,22 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             "known_nondeterministic_kernels": [],
         }
         if is_figure4
-        else {
+        else (
+            {
+                "state_dtype": spec.values["numerics"]["state_dtype"],
+                "statistics_dtype": spec.values["numerics"]["statistics_dtype"],
+                "device": spec.values["numerics"]["compute_device"],
+                "compile_enabled": spec.values["numerics"]["compile_enabled"],
+                "compile_mode": spec.values["numerics"]["compile_mode"],
+                "known_nondeterministic_kernels": [],
+            }
+            if is_filter_synthetic
+            else {
             "float_dtype": spec.values["numerics"]["float_dtype"],
             "device": spec.values["numerics"].get("compute_device", "cpu"),
             "known_nondeterministic_kernels": [],
-        }
+            }
+        )
     )
     seed_manifest = (
         {

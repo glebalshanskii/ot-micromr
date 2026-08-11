@@ -41,8 +41,13 @@ UNBALANCED_SIMULATION_EXPERIMENTS = {"SIM-UNBALANCED-002"}
 SIMULATION_EXPERIMENTS = BALANCED_SIMULATION_EXPERIMENTS | UNBALANCED_SIMULATION_EXPERIMENTS
 FIGURE4_EXPERIMENTS = {"SIM-FIG4-002"}
 EMPIRICAL_EXPERIMENTS = {"EMP-DATA-001"}
+FILTER_SYNTHETIC_EXPERIMENTS = {"FILTER-SYN-001"}
 SUPPORTED_EXPERIMENTS = (
-    ANALYTICAL_EXPERIMENTS | SIMULATION_EXPERIMENTS | FIGURE4_EXPERIMENTS | EMPIRICAL_EXPERIMENTS
+    ANALYTICAL_EXPERIMENTS
+    | SIMULATION_EXPERIMENTS
+    | FIGURE4_EXPERIMENTS
+    | EMPIRICAL_EXPERIMENTS
+    | FILTER_SYNTHETIC_EXPERIMENTS
 )
 
 
@@ -192,6 +197,11 @@ def _validate_common(data: Mapping[str, Any]) -> None:
             raise ConfigError(
                 "RunSpec track/mode: EMP-DATA-001 requires empirical/practical-local"
             )
+    elif experiment_id in FILTER_SYNTHETIC_EXPERIMENTS:
+        if track != "synthetic" or mode != "oracle-diagnostic":
+            raise ConfigError(
+                "RunSpec track/mode: FILTER-SYN-001 requires synthetic/oracle-diagnostic"
+            )
     elif track != "synthetic" or mode != "paper-faithful":
         raise ConfigError(
             "RunSpec track/mode: executable synthetic experiments require synthetic/paper-faithful"
@@ -203,6 +213,10 @@ def _validate_common(data: Mapping[str, Any]) -> None:
         expected = experiment_id in FIGURE4_EXPERIMENTS
         raise ConfigError(f"RunSpec.orders_enabled: expected {expected}")
     _boolean(data, "claim_eligible", "RunSpec")
+
+    if experiment_id in FILTER_SYNTHETIC_EXPERIMENTS:
+        _validate_filter_synthetic(data)
+        return
 
     if experiment_id in EMPIRICAL_EXPERIMENTS:
         _validate_empirical_common(data)
@@ -1402,6 +1416,269 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         raise ConfigError("RunSpec.artifacts.optional_classes: expected empty array")
 
 
+def _validate_filter_synthetic(data: Mapping[str, Any]) -> None:
+    if _boolean(data, "claim_eligible", "RunSpec"):
+        raise ConfigError("RunSpec.claim_eligible: oracle-diagnostic requires false")
+
+    seed = _table(data, "seed_policy")
+    _expect_keys(seed, {"rng_used", "rng_algorithm", "seeds", "mapping"}, "RunSpec.seed_policy")
+    if not _boolean(seed, "rng_used", "RunSpec.seed_policy"):
+        raise ConfigError("RunSpec.seed_policy.rng_used: expected true")
+    if _string(seed, "rng_algorithm", "RunSpec.seed_policy") != "torch.Generator:CUDA":
+        raise ConfigError("RunSpec.seed_policy.rng_algorithm: expected torch.Generator:CUDA")
+    seeds = seed.get("seeds")
+    if (
+        not isinstance(seeds, list)
+        or len(seeds) != 1
+        or isinstance(seeds[0], bool)
+        or not isinstance(seeds[0], int)
+        or seeds[0] <= 0
+    ):
+        raise ConfigError("RunSpec.seed_policy.seeds: expected one positive master seed")
+    _string(seed, "mapping", "RunSpec.seed_policy")
+
+    units = _table(data, "units")
+    expected_units = {
+        "time": "second",
+        "price": "synthetic_price_unit",
+        "quantity": "lot",
+        "cash": "synthetic_quote_currency",
+        "timezone": "UTC",
+        "normalization": "session_relative_state_error_and_nat_per_book_event",
+    }
+    _expect_keys(units, set(expected_units), "RunSpec.units")
+    for key, expected in expected_units.items():
+        if _string(units, key, "RunSpec.units") != expected:
+            raise ConfigError(f"RunSpec.units.{key}: expected {expected!r}")
+
+    numerics = _table(data, "numerics")
+    numeric_keys = {"chunk_steps", "particle_count", "resampling_interval_steps"}
+    string_keys = {
+        "compute_backend",
+        "compute_device",
+        "state_dtype",
+        "statistics_dtype",
+        "compile_mode",
+        "resampling",
+        "nonfinite_policy",
+    }
+    _expect_keys(numerics, numeric_keys | string_keys | {"compile_enabled"}, "RunSpec.numerics")
+    expected_numerics = {
+        "compute_backend": "torch",
+        "compute_device": "cuda",
+        "state_dtype": "float32",
+        "statistics_dtype": "float64",
+        "compile_mode": "reduce-overhead",
+        "resampling": "systematic_every_fixed_chunk",
+        "nonfinite_policy": "stop",
+    }
+    for key, expected in expected_numerics.items():
+        if _string(numerics, key, "RunSpec.numerics") != expected:
+            raise ConfigError(f"RunSpec.numerics.{key}: expected {expected!r}")
+    if not _boolean(numerics, "compile_enabled", "RunSpec.numerics"):
+        raise ConfigError("RunSpec.numerics.compile_enabled: expected true")
+    chunk_steps = _integer(numerics, "chunk_steps", "RunSpec.numerics", positive=True)
+    if _integer(numerics, "particle_count", "RunSpec.numerics", positive=True) != 256:
+        raise ConfigError("RunSpec.numerics.particle_count: expected 256")
+    if _integer(
+        numerics, "resampling_interval_steps", "RunSpec.numerics", positive=True
+    ) != chunk_steps:
+        raise ConfigError("RunSpec.numerics: resampling interval must equal chunk size")
+
+    inputs = _table(data, "inputs")
+    input_keys = {
+        "source_kind",
+        "paper_version",
+        "paper_pdf_sha256",
+        "protocol_path",
+        "base_experiment_id",
+        "oracle_kind",
+        "future_access",
+        "dataset",
+        "dataset_reason",
+    }
+    _expect_keys(inputs, input_keys, "RunSpec.inputs")
+    expected_inputs = {
+        "source_kind": "paper_model_project_parameters",
+        "paper_version": "arXiv:2608.00885v1",
+        "base_experiment_id": "SIM-MOMENTS-002",
+        "oracle_kind": "known_synthetic_efficient_price",
+        "future_access": "oracle_used_only_after_filtering_for_metrics",
+        "dataset": "not_applicable",
+    }
+    for key, expected in expected_inputs.items():
+        if _string(inputs, key, "RunSpec.inputs") != expected:
+            raise ConfigError(f"RunSpec.inputs.{key}: expected {expected!r}")
+    for key in ("protocol_path", "dataset_reason"):
+        _string(inputs, key, "RunSpec.inputs")
+    paper_hash = _string(inputs, "paper_pdf_sha256", "RunSpec.inputs")
+    if len(paper_hash) != 64 or any(char not in "0123456789abcdef" for char in paper_hash):
+        raise ConfigError("RunSpec.inputs.paper_pdf_sha256: expected lowercase SHA-256")
+
+    model = _table(data, "model")
+    model_keys = {
+        "enabled",
+        "delta_price",
+        "sigma_x_price_per_sqrt_second",
+        "mu_s_per_second",
+        "mu_o_per_second",
+        "mu_c_per_second",
+        "alpha_s_per_second",
+        "alpha_o_per_second",
+        "alpha_c_per_second",
+        "balanced_response_constraint",
+        "initial_mid_half_ticks",
+        "initial_efficient_price",
+        "particle_initial_standard_deviation_price",
+        "kalman_measurement_variance_price_squared",
+    }
+    _expect_keys(model, model_keys, "RunSpec.model")
+    if not _boolean(model, "enabled", "RunSpec.model"):
+        raise ConfigError("RunSpec.model.enabled: expected true")
+    model_values = {
+        key: _number(model, key, "RunSpec.model", positive=True)
+        for key in (
+            "delta_price",
+            "sigma_x_price_per_sqrt_second",
+            "mu_s_per_second",
+            "mu_o_per_second",
+            "mu_c_per_second",
+            "alpha_s_per_second",
+            "alpha_o_per_second",
+            "alpha_c_per_second",
+            "particle_initial_standard_deviation_price",
+            "kalman_measurement_variance_price_squared",
+        )
+    }
+    if not math.isclose(
+        2.0 * model_values["alpha_s_per_second"] + model_values["alpha_o_per_second"],
+        model_values["alpha_c_per_second"],
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
+        raise ConfigError("RunSpec.model: balanced response constraint is violated")
+    _string(model, "balanced_response_constraint", "RunSpec.model")
+    if _integer(model, "initial_mid_half_ticks", "RunSpec.model") != 1:
+        raise ConfigError("RunSpec.model.initial_mid_half_ticks: expected one")
+    _number(model, "initial_efficient_price", "RunSpec.model")
+
+    simulation = _table(data, "simulation")
+    simulation_keys = {
+        "enabled",
+        "time_step_seconds",
+        "burn_in_seconds",
+        "horizon_seconds",
+        "session_count",
+        "maximum_events_per_step",
+        "event_occurrence_probability",
+    }
+    _expect_keys(simulation, simulation_keys, "RunSpec.simulation")
+    if not _boolean(simulation, "enabled", "RunSpec.simulation"):
+        raise ConfigError("RunSpec.simulation.enabled: expected true")
+    dt = _number(simulation, "time_step_seconds", "RunSpec.simulation", positive=True)
+    burn = _number(simulation, "burn_in_seconds", "RunSpec.simulation", positive=True)
+    horizon = _number(simulation, "horizon_seconds", "RunSpec.simulation", positive=True)
+    if _integer(simulation, "session_count", "RunSpec.simulation", positive=True) != 64:
+        raise ConfigError("RunSpec.simulation.session_count: expected 64")
+    if _integer(simulation, "maximum_events_per_step", "RunSpec.simulation") != 1:
+        raise ConfigError("RunSpec.simulation.maximum_events_per_step: expected one")
+    _string(simulation, "event_occurrence_probability", "RunSpec.simulation")
+    total_steps = (burn + horizon) / dt
+    if not math.isclose(total_steps, round(total_steps), rel_tol=0.0, abs_tol=1e-9):
+        raise ConfigError("RunSpec.simulation: duration must be an integer number of steps")
+    if round(total_steps) % chunk_steps != 0:
+        raise ConfigError("RunSpec.simulation: total steps must be divisible by chunk_steps")
+
+    for section in ("strategy", "execution"):
+        table = _table(data, section)
+        _expect_keys(table, {"enabled", "reason"}, f"RunSpec.{section}")
+        if _boolean(table, "enabled", f"RunSpec.{section}"):
+            raise ConfigError(f"RunSpec.{section}.enabled: FILTER-SYN-001 requires false")
+        _string(table, "reason", f"RunSpec.{section}")
+
+    evaluation = _table(data, "evaluation")
+    evaluation_keys = {
+        "primary_family_id",
+        "familywise_alpha",
+        "multiplicity_method",
+        "per_metric_alpha",
+        "power_target",
+        "state_metric",
+        "state_minimum_effect",
+        "state_planning_alternative",
+        "state_planning_session_standard_deviation",
+        "log_score_metric",
+        "log_score_minimum_effect_nat_per_event",
+        "log_score_planning_alternative_nat_per_event",
+        "log_score_planning_session_standard_deviation",
+        "planned_minimum_sessions",
+        "planned_sessions",
+        "calibration_family_id",
+        "posterior_interval_nominal_coverage",
+        "posterior_coverage_equivalence_margin",
+        "calibration_alpha",
+        "maximum_event_probability",
+        "maximum_wall_seconds",
+    }
+    _expect_keys(evaluation, evaluation_keys, "RunSpec.evaluation")
+    for key in (
+        "primary_family_id",
+        "multiplicity_method",
+        "state_metric",
+        "log_score_metric",
+        "calibration_family_id",
+    ):
+        _string(evaluation, key, "RunSpec.evaluation")
+    for key in evaluation_keys - {
+        "primary_family_id",
+        "multiplicity_method",
+        "state_metric",
+        "log_score_metric",
+        "calibration_family_id",
+        "planned_minimum_sessions",
+        "planned_sessions",
+    }:
+        _number(evaluation, key, "RunSpec.evaluation", positive=True)
+    if _integer(evaluation, "planned_minimum_sessions", "RunSpec.evaluation", positive=True) != 43:
+        raise ConfigError("RunSpec.evaluation.planned_minimum_sessions: expected 43")
+    if _integer(evaluation, "planned_sessions", "RunSpec.evaluation", positive=True) != 64:
+        raise ConfigError("RunSpec.evaluation.planned_sessions: expected 64")
+
+    acceptance = _table(data, "acceptance")
+    acceptance_keys = {
+        "require_state_superiority",
+        "require_log_score_superiority",
+        "require_calibration_equivalence",
+        "require_oracle_rmse_zero",
+        "require_deterministic_replay",
+        "require_clean_tree_for_claim",
+        "stop_on_nonfinite_value",
+    }
+    _expect_keys(acceptance, acceptance_keys, "RunSpec.acceptance")
+    for key in acceptance_keys:
+        if not _boolean(acceptance, key, "RunSpec.acceptance"):
+            raise ConfigError(f"RunSpec.acceptance.{key}: expected true")
+
+    artifacts = _table(data, "artifacts")
+    _expect_keys(artifacts, {"output_root", "required_classes", "optional_classes"}, "RunSpec.artifacts")
+    if _string(artifacts, "output_root", "RunSpec.artifacts") != "outputs":
+        raise ConfigError("RunSpec.artifacts.output_root: expected outputs")
+    required = set(_string_sequence(artifacts, "required_classes", "RunSpec.artifacts"))
+    if required != {
+        "source_config",
+        "resolved_runspec",
+        "manifest",
+        "log",
+        "metrics_summary",
+        "metrics_raw",
+        "table",
+    }:
+        raise ConfigError("RunSpec.artifacts.required_classes: unexpected FILTER-SYN-001 contract")
+    optional = artifacts.get("optional_classes")
+    if not isinstance(optional, list) or optional:
+        raise ConfigError("RunSpec.artifacts.optional_classes: expected empty array")
+
+
 def _validate_empirical_common(data: Mapping[str, Any]) -> None:
     seed = _table(data, "seed_policy")
     _expect_keys(seed, {"rng_used", "rng_algorithm", "seeds", "mapping"}, "RunSpec.seed_policy")
@@ -1670,7 +1947,7 @@ def validate_runspec(data: Mapping[str, Any]) -> None:
     _validate_finite_tree(data)
     _validate_common(data)
     experiment_id = str(data["experiment_id"])
-    if experiment_id in EMPIRICAL_EXPERIMENTS:
+    if experiment_id in EMPIRICAL_EXPERIMENTS or experiment_id in FILTER_SYNTHETIC_EXPERIMENTS:
         return
     if experiment_id in FIGURE4_EXPERIMENTS:
         _validate_figure4(data, experiment_id)
