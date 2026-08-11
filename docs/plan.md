@@ -6,7 +6,7 @@
 >
 > **Текущий статус:** P5 completed/passed; P6 in progress, causal filter protocol frozen
 >
-> **Следующий шаг:** implement and validate `FILTER-SYN-001` before empirical target
+> **Следующий шаг:** выполнить preregistered `EMP-FILTER-001`; synthetic dependency passed.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -767,6 +767,17 @@ Primary scientific problem practical track — не threshold tuning, а оце�
 [`p6-causal-efficient-price.md`](protocols/empirical/p6-causal-efficient-price.md).
 P6 разделён на `FILTER-SYN-001` oracle-diagnostic leg и `EMP-FILTER-001` practical-local
 leg; orders, execution и P&L запрещены в обоих.
+
+`FILTER-SYN-001/20260811T234700354892Z-9e7f2939b506-det` выполнен из clean commit
+`4cf3212` и прошёл все gates. PF дал mean RMSE improvement `0.17594` относительно
+current-mid baseline, Bonferroni lower bound `0.16383 > 0.10`; log-score improvement
+`0.29961 nat/event`, lower bound `0.28752 > 0.01`. Gaussian 90% posterior interval
+показал coverage `0.89398` и equivalence interval `[0.88824, 0.89973]` внутри
+`[0.85, 0.95]`. CUDA replay совпал bitwise; elapsed `64.60 s`.
+
+После synthetic gate заморожен исполняемый [`EMP-FILTER-001`](../cfg/experiments/emp_filter_001.toml):
+fit `2024-01-15`, selection `2024-07-15`, untouched audit `2024-12-15`; только frozen
+P5 train assets, exact paper channels, causal same-venue spot as-of и никаких P&L inputs.
 
 В текущем scope все feasible real-data estimators являются same-venue: causal filter
 swap book/trades, OKX spot reference либо OKX index/mark. Cross-venue estimates и Binance

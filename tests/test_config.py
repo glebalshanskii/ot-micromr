@@ -109,6 +109,18 @@ class RunSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "strategy.enabled: FILTER-SYN-001"):
             validate_runspec(data)
 
+    def test_p6_empirical_filter_contract_and_dependencies_validate(self) -> None:
+        spec = load_runspec(
+            REPOSITORY_ROOT / "cfg" / "experiments" / "emp_filter_001.toml"
+        )
+        self.assertEqual(spec.values["evaluation"]["audit_date"], "2024-12-15")
+        self.assertEqual(spec.values["inputs"]["validation_and_test_access"], "forbidden")
+
+        data = load_data("emp_filter_001.toml")
+        data["execution"]["enabled"] = True
+        with self.assertRaisesRegex(ConfigError, "execution.enabled: EMP-FILTER-001"):
+            validate_runspec(data)
+
     def test_unknown_simulation_field_is_rejected(self) -> None:
         data = load_data("sim_moments_002.toml")
         data["simulation"]["implicit_dt"] = 0.1
