@@ -50,9 +50,11 @@ misses Brownian crossings and is not adequate for Figure 4.
 8. Pilot seeds cannot enter the target run. Pilot output may determine target horizon and seed
    count only through a dated amendment written before any target seed is evaluated. No
    optional extension is allowed after target inspection.
-9. Adaptive market simulation and bridge decisions remain CPU `float64`. Vectorised bootstrap
-   and policy-curve reductions use compiled CUDA `float32` when an end-to-end benchmark wins;
-   CPU `float64` remains the regression oracle. Exact NumPy/Torch RNG identity is not required.
+9. Adaptive market endpoints remain CPU `float64`. The accepted 2026-08-11 compute amendment
+   moves the full time-by-seed-by-threshold bridge crossing, alternating fill state and reward
+   reduction to compiled CUDA `float32`; bootstrap may independently select CPU or CUDA by
+   measured wall-clock. CPU `float64` remains the semantic oracle. Exact NumPy/Torch RNG
+   identity is not required, but both stream mappings and backend regression are recorded.
 
 ## Consequences
 

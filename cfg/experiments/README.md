@@ -17,7 +17,7 @@ written separately to `manifest.json` and never mutates the preregistered TOML.
 | `SIM-MOMENTS-002` | `sim_moments_002.toml` | Powered integrated-flow and exact-generator validation | passed; global P3V supported |
 | `SIM-UNBALANCED-002` | `sim_unbalanced_002.toml` | Powered jump-compensator negative control | passed; global P3V supported |
 | `SIM-FIG4-PILOT-001` | `sim_fig4_pilot_001.toml` | Non-claim crossing, variance and compute pilot | failed before simulation: observation scheduler bug |
-| `SIM-FIG4-PILOT-002` | `sim_fig4_pilot_002.toml` | Replacement infrastructure pilot | initial run failed before strategy simulation; repaired rerun pending |
+| `SIM-FIG4-PILOT-002` | `sim_fig4_pilot_002.toml` | Replacement infrastructure pilot | completed; expected operational gate failure (25 < 100 intervals) |
 
 The source paper does not disclose the primitive parameters, simulator, seeds or raw
 outputs used for Figure 4. Parameters in all three `SIM-*` configs are therefore

@@ -556,7 +556,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
         {
             "market_float_dtype": spec.values["numerics"]["market_float_dtype"],
             "reduction_float_dtype": spec.values["numerics"]["reduction_float_dtype"],
-            "device": "cpu_market_plus_optional_cuda_reduction",
+            "device": "cpu_adaptive_market_plus_torch_compile_cuda_crossings_and_reduction",
             "known_nondeterministic_kernels": [],
         }
         if is_figure4

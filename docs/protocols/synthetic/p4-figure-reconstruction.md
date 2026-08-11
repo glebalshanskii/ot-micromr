@@ -1,7 +1,7 @@
 # P4 protocol: independent Figures 2, 4 and 5 reconstruction
 
 - Date: 2026-08-11
-- Status: pilot preregistered; target amendment pending pilot variance/runtime only
+- Status: CPU pilot completed; CUDA functional regression and target amendment pending
 - Paper: Amaral, *Optimal Trading of Microstructure Mean Reversion*, `arXiv:2608.00885v1`
 - Paper SHA-256: `fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba`
 - Decision: [`ADR-0008`](../../adr/0008-p4-crossing-execution-and-inference.md)
@@ -69,6 +69,18 @@ The first `SIM-FIG4-PILOT-002` attempt exposed a second endpoint-roundoff case a
 constructed from integer indices over the closed measured interval, with the last index set
 exactly to the horizon. The failed run is retained and the same preregistered scientific config
 is rerun under a new immutable run ID and code commit.
+
+The completed rerun `20260811T200458288216Z-d9d6dc74bb9e-det` took `186.996 s` and was
+operationally underpowered as intended: the minimum cell had 25 complete intervals versus
+the target floor of 100. It covered realised gamma only through `0.3244`; separate
+calibration-only pilot evidence selects response scales near `{0.65,1.0,2.0}` for target
+gamma approximately `{0.28,0.36,0.47}`. No target seed was evaluated.
+
+The CPU pilot also rejected policy-inside-step execution on runtime grounds. Per
+[`ADR-0007`](../../adr/0007-p4-hybrid-cpu-cuda-backend.md), the target candidate records
+adaptive market endpoints on process-parallel CPU and evaluates continuous crossings,
+alternating fills and rewards in batched `torch.compile` CUDA `float32`. A complete CUDA
+pilot regression and frozen end-to-end runtime budget are required before target launch.
 
 ## 4. Strategy and rate
 

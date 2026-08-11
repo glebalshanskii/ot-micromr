@@ -4,6 +4,7 @@ import unittest
 
 from ot_micromr.config import load_runspec
 from ot_micromr.figure4 import calibrate_rows, replay_figure4_coordinate, simulate_figure4
+from ot_micromr.figure4_market import simulate_market_trace
 
 
 class Figure4SimulationTests(unittest.TestCase):
@@ -53,6 +54,15 @@ class Figure4SimulationTests(unittest.TestCase):
             rows[0].observation_count,
             expected_per_seed * len(values["seed_policy"]["calibration_seeds"]),
         )
+
+    def test_market_trace_replays_bitwise_without_policy_work(self) -> None:
+        values = self._tiny_values()
+        calibration = calibrate_rows(values)[0]
+        first = simulate_market_trace(values, calibration, 0.01, 301)
+        second = simulate_market_trace(values, calibration, 0.01, 301)
+        self.assertEqual(first.replay_digest, second.replay_digest)
+        self.assertEqual(first.left_time_seconds.size, first.post_event_gap_price.size)
+        self.assertLessEqual(first.maximum_left_event_probability, 0.01 + 2e-15)
 
 
 if __name__ == "__main__":

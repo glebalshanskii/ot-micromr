@@ -19,6 +19,8 @@ from ot_micromr.figure4 import (
     replay_figure4_coordinate,
     simulate_figure4,
 )
+from ot_micromr.figure4_cuda import evaluate_market_traces_cuda
+from ot_micromr.figure4_market import simulate_market_trace, simulate_market_traces
 
 
 def _mean_se_interval(values: Sequence[float]) -> tuple[float, float, float, float]:
@@ -391,9 +393,44 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         for row in calibrations
         for seed in seeds
     ]
-    results = simulate_figure4(
-        values, calibrations, coordinates, int(values["numerics"]["cpu_workers"])
-    )
+    use_cuda = False
+    if bool(values["numerics"]["gpu_reduction_enabled"]):
+        try:
+            import torch
+        except ImportError:
+            pass
+        else:
+            use_cuda = bool(torch.cuda.is_available())
+    market_traces = ()
+    continuous_backend: dict[str, Any]
+    if use_cuda:
+        market_started = time.perf_counter()
+        market_traces = simulate_market_traces(
+            values,
+            calibrations,
+            coordinates,
+            int(values["numerics"]["cpu_workers"]),
+        )
+        market_seconds = time.perf_counter() - market_started
+        cuda_started = time.perf_counter()
+        cuda_evaluation = evaluate_market_traces_cuda(values, calibrations, market_traces)
+        cuda_seconds = time.perf_counter() - cuda_started
+        results = cuda_evaluation.replications
+        continuous_backend = {
+            "selected": "cpu_adaptive_market_plus_torch_compile_cuda_float32_crossings",
+            "market_generation_seconds": market_seconds,
+            "cuda_crossing_evaluation_seconds": cuda_seconds,
+            "groups": cuda_evaluation.benchmark,
+        }
+    else:
+        cpu_started = time.perf_counter()
+        results = simulate_figure4(
+            values, calibrations, coordinates, int(values["numerics"]["cpu_workers"])
+        )
+        continuous_backend = {
+            "selected": "numpy_float64_continuous_crossing",
+            "end_to_end_seconds": time.perf_counter() - cpu_started,
+        }
     policy_rows = [dict(policy) for result in results for policy in result.policy_rows]
     diagnostic_rows = [
         {
@@ -407,19 +444,42 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         for result in results
     ]
     curve_rows = _curve_rows(results, calibrations)
-    functional_rows, backend = _functionals(values, results)
+    functional_rows, reduction_backend = _functionals(values, results)
+    backend = {
+        "continuous_crossing": continuous_backend,
+        "functional_reduction": reduction_backend,
+    }
     selections = _selected_rows(
         calibrations, values["evaluation"]["target_realized_gamma_ratios"]
     )
     replay_mismatches = 0
     for replay_seed in values["seed_policy"]["deterministic_replay_seeds"]:
-        original = next(
-            item
-            for item in results
-            if item.row_index == 0 and item.epsilon == epsilons[0] and item.seed == replay_seed
-        )
-        replay = replay_figure4_coordinate(values, calibrations[0], epsilons[0], replay_seed)
-        replay_mismatches += int(original.replay_digest != replay.replay_digest)
+        if use_cuda:
+            original_trace = next(
+                item
+                for item in market_traces
+                if item.row_index == 0
+                and item.epsilon == epsilons[0]
+                and item.seed == replay_seed
+            )
+            replay_trace = simulate_market_trace(
+                values, calibrations[0], epsilons[0], replay_seed
+            )
+            replay_mismatches += int(
+                original_trace.replay_digest != replay_trace.replay_digest
+            )
+        else:
+            original = next(
+                item
+                for item in results
+                if item.row_index == 0
+                and item.epsilon == epsilons[0]
+                and item.seed == replay_seed
+            )
+            replay = replay_figure4_coordinate(
+                values, calibrations[0], epsilons[0], replay_seed
+            )
+            replay_mismatches += int(original.replay_digest != replay.replay_digest)
 
     write_csv(
         run_directory / "metrics" / "seed_threshold_metrics.csv",
