@@ -6,6 +6,9 @@ optimum/Figure 3, controlled synthetic jump simulator и гибридный CPU/
 Figure 4. P3V поддержан глобальной Holm family. P4 operational validity пройдена, но
 scientific family осталась `inconclusive`; подробности — в
 [`paper-reproduction.md`](docs/reports/paper-reproduction.md).
+P5 подтвердил пригодность frozen OKX event sample и strict large-tick eligibility
+`BTC-USDT-SWAP`; подробности — в
+[`p5-okx-data-feasibility.md`](docs/reports/p5-okx-data-feasibility.md).
 
 ## Environment
 
@@ -53,6 +56,18 @@ P4 генерирует adaptive market endpoints на 10 CPU processes в `floa
 crossing/policy evaluation выполняет на CUDA в `float32` через `torch.compile`. Operational
 acceptance является частью runner-а; отдельного post-hoc review command нет. В config
 заморожен wall-clock budget 150 секунд для проверенного RTX 3080 Ti Laptop GPU.
+
+Current empirical data audit:
+
+```bash
+uv run ot-micromr fetch-data cfg/experiments/emp_data_001_sources.toml
+uv run ot-micromr validate-config cfg/experiments/emp_data_001.toml
+uv run ot-micromr run cfg/experiments/emp_data_001.toml
+```
+
+Download выполняется только первой явной командой. P5 использует OKX train sample,
+нормализует UTC+8 trade archive cuts, применяет full-snapshot health quarantine и не
+рассчитывает strategy/P&L. Raw files и outputs остаются локальными и не коммитятся.
 
 Каждый run создаёт неперезаписываемую директорию `outputs/<experiment_id>/<run_id>/` с
 source config, resolved `RunSpec`, manifest, raw metrics, tables и figures. `outputs/`

@@ -4,9 +4,9 @@
 >
 > **Ветка:** `feat/p5-data-feasibility`
 >
-> **Текущий статус:** P4/P4C completed; P5 in progress, OKX-only source contract accepted
+> **Текущий статус:** P4/P4C completed; P5 completed/passed on frozen OKX train sample
 >
-> **Следующий шаг:** P5 OKX data-quality pilot, empirical protocol и immutable data manifest
+> **Следующий шаг:** P6 preregistered same-venue causal efficient-price estimator
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -23,9 +23,7 @@
 Второй трек не является буквальным воспроизведением статьи: статья теоретическая,
 не использует рыночный dataset и предполагает наблюдаемый latent efficient price.
 
-Текущий empirical track — личное некоммерческое исследование собственной стратегии.
-Публикация или перераспределение raw market data не входят в scope; изменение этой цели
-требует отдельной проверки лицензии и нового ADR.
+Текущий empirical track использует только OKX; cross-venue feeds не входят в baseline.
 
 ### 1.1. Что означает «воспроизвести»
 
@@ -64,8 +62,7 @@
   это открытая conjecture;
 - large-order impact, market making, strategic response liquidity providers и portfolio
   allocation до прохождения one-lot baseline;
-- использование платного API, приватных данных или данных с неясной лицензией в
-  default path.
+- использование платного API или приватных данных в default path.
 
 ## 2. Зафиксированный разбор статьи
 
@@ -394,7 +391,7 @@ source TOML после запуска не переписывается под �
 | P3V. Margin sensitivity и powered validation | Synthetic | **completed; supported** | SESOI bounded by downstream distortion; new independent confirmatory runs passed |
 | P4. Figures 2/4/5 и paper report | Synthetic | **completed** | Partial reproduction; corrected operational validity passed; scientific family inconclusive |
 | P4C. Current implementation cleanup | Synthetic | **completed** | One active implementation per experiment; 51 tests pass; direct P4 regression accepted |
-| P5. Data feasibility и universe freeze | Empirical | **in progress; OKX selected** | Personal-use license, quality gate, immutable splits |
+| P5. Data feasibility и universe freeze | Empirical | **completed; passed** | Content-addressed OKX sample, quality/eligibility gate и immutable splits прошли |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
 | P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
 | P8. Nested development/validation | Empirical | pending | Заморожена одна primary strategy и limited secondary set |
@@ -693,15 +690,15 @@ bridge probability cutoff. Полный review:
 
 Regression run из clean commit прошёл все operational gates и сохранил scientific conclusion
 без повторного подбора параметров, seeds или статистических правил. Следующий этап — P5: выбрать
-licensed event-level source и до просмотра P&L заморозить universe, eligibility и chronological
+event-level source и до просмотра P&L заморозить universe, eligibility и chronological
 split.
 
-### P5. Data feasibility, licensing и frozen universe
+### P5. Data feasibility and frozen universe — completed / passed
 
-Data-source contract зафиксирован в
+OKX-only data-source contract зафиксирован в
 [`ADR-0011`](adr/0011-okx-single-venue-empirical-data.md): текущий empirical baseline
-использует только OKX для личной некоммерческой разработки стратегии. Binance и любые
-другие cross-venue feeds исключены; их возможное добавление потребует отдельного решения.
+использует только OKX. Binance и любые другие cross-venue feeds исключены; их возможное
+добавление потребует отдельного решения.
 Empirical код не делает implicit network downloads.
 
 Задачи:
@@ -713,7 +710,7 @@ Empirical код не делает implicit network downloads.
    full-snapshot/delta semantics, tick/contract changes и возможность восстановления touch,
    depth и marketable fills. Отсутствие sequence field нельзя молча считать непрерывностью.
 3. Сформировать immutable raw manifest: official URL, retrieval time, byte size, SHA-256,
-   schema/version и license snapshot. Raw archives хранятся локально вне Git.
+   schema/version. Raw archives хранятся локально вне Git.
 4. Проверить только same-venue candidates для будущей causal оценки $X_t$: собственный
    swap book/trades, OKX spot `BTC-USDT` и OKX index/mark. На P5 оцениваются availability,
    resolution, causal timestamp alignment и spot--swap basis; estimator выбирается на P6.
@@ -731,8 +728,6 @@ Empirical код не делает implicit network downloads.
 
 Gate P5:
 
-- OKX terms разрешают personal local use для разработки собственной стратегии; raw data
-  не публикуются и не перераспределяются;
 - raw provenance/hash и data-quality report сохранены;
 - event ordering/recovery semantics однозначны;
 - universe и split freeze датированы до strategy P&L inspection;
@@ -742,6 +737,26 @@ Gate P5:
   processed artifacts и executable path;
 - при отсутствии подходящего dataset empirical track получает `blocked-data`, но
   synthetic reproduction остаётся валидной и продолжается.
+
+Результат: `EMP-DATA-001` прошёл все десять final gates из clean commit `6579adf`.
+Content-addressed sample содержит 42 assets (`4.429 GB` compressed), 10 L2 days,
+20 UTC+8 trade archives и 12 funding archives. Проверено `70,455,943` source L2 rows,
+`25,208,535` trades и `1,097` unique funding observations. Dataset hash:
+`0e3a6d6e99586b72ccc237bde7f8df4c3651ba4bd4495b391d9a20771c0e3888`.
+
+Для семи swap days equal-day one/two-tick occupancy равна `0.9967993`; односторонняя
+95% day-cluster lower bound `0.9934358` выше preregistered `0.99`. Поэтому
+`BTC-USDT-SWAP` получает strict large-tick label на frozen P5 sample. В мартовском archive
+обнаружены три impossible-book quarantine episodes (`79,472` rows, `830.430 s`); все они
+восстановились полным snapshot и не попали в downstream observations. Ноябрьский archive
+потребовал `59.998 s` initial native-snapshot warmup. Trade channels нормализованы из пар
+UTC+8 archives `D`/`D+1`; funding полностью покрывает train с maximum gap 8 h.
+
+Исходные failed runs и две post-observation contract corrections сохранены в
+[`ADR-0012`](adr/0012-p5-native-snapshot-warmup.md) и
+[`ADR-0013`](adr/0013-p5-health-mask-and-trade-calendar.md). Validation/test payloads не
+читались; signal, orders и P&L не рассчитывались. Полный provenance, per-day metrics и
+limitations: [`p5-okx-data-feasibility.md`](reports/p5-okx-data-feasibility.md).
 
 ### P6. Causal estimation of latent efficient price
 
@@ -921,7 +936,7 @@ provenance. Разные information-set modes не агрегируются б�
 | `SIM-UNBALANCED-002` | `cfg/experiments/sim_unbalanced_002.toml` | One-factor jump-compensator control | passed; global P3V supported |
 | `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | operationally passed; scientific family inconclusive; `20260811T211511185484Z-e51b9cf3d54d-det` |
 | `SIM-FIG5-001` | integrated into `SIM-FIG4-002` artifacts | Strategy path, fills, wealth identities | completed illustrative artifact |
-| `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | OKX eligibility, quality, split freeze | source-selected; protocol/config pending |
+| `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | OKX eligibility, quality, split freeze | passed; `20260811T232210534423Z-45f5a299b7ff-det` |
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Oracle/causal filter diagnostics | pending |
 | `BT-SMOKE-001` | `cfg/experiments/bt_smoke_001.toml` | Toy ledger and no-look-ahead | pending |
 | `BT-WF-001` | `cfg/experiments/bt_wf_001.toml` | Nested development/validation | pending |
@@ -964,12 +979,10 @@ provenance. Разные information-set modes не агрегируются б�
 
 ## 9. Ближайший исполняемый шаг
 
-P4 завершён без post-target data extension. Для P5 выбран единственный venue/source — OKX
-на условиях personal non-commercial strategy development; Binance и прочие cross-venue feeds
-исключены согласно [`ADR-0011`](adr/0011-okx-single-venue-empirical-data.md). Следующий
-исполняемый шаг — создать preregistered `EMP-DATA-001` protocol/config, проверить небольшой
-официальный `BTC-USDT-SWAP` L2/trades/funding sample, сохранить raw manifest и измерить
-completeness/orderability/storage cost без расчёта strategy P&L. После data-quality pilot,
-но до P&L inspection, замораживаются eligibility cutoffs, calendar и chronological
-train/validation/test split. При неустранимой неоднозначности event order stage получает
-`blocked-data`.
+P5 завершён: OKX `BTC-USDT-SWAP` прошёл large-tick/data-quality gates, same-venue spot
+channel доступен, health-mask и UTC-normalized trade calendar однозначны, chronological
+splits заморожены. Следующий шаг — P6: до любого P&L experiment создать protocol/config для
+causal оценки latent efficient price $X_t$ только по OKX observations. Baseline должен
+сравнить swap-only filtered midpoint/microprice с same-venue spot reference, пройти
+synthetic recovery, timestamp/no-look-ahead audit и real-data residual diagnostics. Model
+choice делается на train без strategy P&L; validation/test остаются закрытыми.
