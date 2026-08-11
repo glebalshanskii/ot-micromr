@@ -46,11 +46,30 @@ error was `7.19e-6`, or `1.82e-7` of the maximum reference-rate scale. Raw evide
 `outputs/p3v/band-backends.json` and
 `outputs/p3v/band-backends-large.json`.
 
+## Continuous-crossing amendment, 2026-08-11
+
+The first full CPU pilot took `186.996 s`, so keeping policy crossing inside every scalar
+adaptive step is rejected for P4 target execution. The semantically equivalent decomposition
+is now:
+
+1. CPU `float64` generates each adaptive market path once and records left, pre-book and
+   post-book endpoints. Independent paths remain process-parallel.
+2. A compiled CUDA `float32` kernel broadcasts those endpoints over all thresholds and seeds,
+   evaluates exact one-sided bridge probabilities, orders diffusion before book jumps, carries
+   the alternating position through `cummax`, and reduces fills/rewards on device.
+3. NumPy `PCG64DXSM` remains the market-path RNG. CUDA bridge uniforms use a recorded
+   deterministic Philox seed mapping; cross-backend bitwise RNG identity is not a scientific
+   requirement.
+
+On a real pilot row (six paths, 13 thresholds, 1,060,041 adaptive endpoints), scalar endpoint
+generation took `3.13 s`; compiled continuous-crossing CUDA evaluation took `8.84 s`, including
+`5.30 s` cold compilation. A one-path decomposition measured an `8.80x` endpoint-generator
+speedup over the old policy-inside-step implementation. The full end-to-end pilot regression
+and steady-state target timing remain required before claim execution.
+
 ## Consequences
 
-This benchmark selects the architecture but is not Figure 4 evidence: the endpoint proxy
-does not detect intra-step Brownian crossings. `SIM-FIG4-002` remains blocked until the
-continuous-crossing CPU reference, CUDA regression, statistical protocol and executable
-config are frozen. GPU compilation cost is amortised only for repeated or sufficiently
-large evaluations; small workloads may continue to use CPU automatically if a recorded
-break-even benchmark supports that choice.
+The earlier endpoint proxy alone remains non-evidence. The new CUDA kernel does evaluate
+intra-step crossings and is the target candidate, but `SIM-FIG4-002` remains blocked until
+its pilot-level functional regression, statistical protocol and executable config are frozen.
+Cold compilation is reported separately and included in every end-to-end decision.

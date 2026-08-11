@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ot_micromr.artifacts import artifact_inventory, atomic_write_json, sha256_file
 from ot_micromr.config import load_runspec
-from ot_micromr.experiments import evaluate_smoke
+from ot_micromr.experiments import _required_artifacts_present, evaluate_smoke
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +27,16 @@ class ExperimentTests(unittest.TestCase):
             records = artifact_inventory(root)
             self.assertEqual(len(records), 1)
             self.assertEqual(records[0]["sha256"], sha256_file(path))
+
+    def test_figure4_artifact_inventory_is_independent_of_p3_figure_name(self) -> None:
+        spec = load_runspec(
+            REPOSITORY_ROOT / "cfg" / "experiments" / "sim_fig4_pilot_001.toml"
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            present = _required_artifacts_present(spec, Path(temporary_directory))
+        self.assertEqual(set(present), set(spec.values["artifacts"]["required_classes"]))
+        self.assertTrue(present["manifest"])
+        self.assertFalse(present["figure"])
 
 
 if __name__ == "__main__":

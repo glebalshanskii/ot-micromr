@@ -55,6 +55,12 @@ statistical significance для них равны `not_applicable`.
 за пределами проверенного domain. Если заявляется rate of failures, для него создаётся
 отдельный stochastic gate с exposure unit и binomial/cluster interval.
 
+Minimum event/transition/trade count является hard operational gate только тогда, когда
+меньшее число делает заявленный estimator математически неопределённым или нарушает data
+contract. В остальных случаях это exposure/coverage diagnostic. Достаточность для stochastic
+claim оценивается по declared independent unit, interval width, effect-size margin и power;
+необоснованный count floor не должен инвалидировать иначе полный эксперимент.
+
 ### 3.2. Equality/equivalence
 
 Для target $\theta_0$ и symmetric SESOI margin $\Delta>0$ проверяются две hypotheses:

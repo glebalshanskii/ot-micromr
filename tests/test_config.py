@@ -84,6 +84,22 @@ class RunSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "executable validator supports only"):
             validate_runspec(data)
 
+    def test_figure4_pilot_contract_validates(self) -> None:
+        for name in ("sim_fig4_pilot_001.toml", "sim_fig4_pilot_002.toml"):
+            with self.subTest(name=name):
+                validate_runspec(load_data(name))
+        data = load_data("sim_fig4_pilot_002.toml")
+        data["simulation"]["implicit_dt"] = 0.1
+        with self.assertRaisesRegex(ConfigError, "unknown fields"):
+            validate_runspec(data)
+
+    def test_figure4_target_contract_validates(self) -> None:
+        data = load_data("sim_fig4_002.toml")
+        validate_runspec(data)
+        data["evaluation"]["planned_strategy_seed_count"] = 29
+        with self.assertRaisesRegex(ConfigError, "disagrees with strategy seeds"):
+            validate_runspec(data)
+
     def test_unknown_simulation_field_is_rejected(self) -> None:
         data = load_data("sim_moments_001.toml")
         data["simulation"]["implicit_dt"] = 0.1

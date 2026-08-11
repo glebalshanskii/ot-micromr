@@ -2,11 +2,11 @@
 
 > **Обновлено:** 2026-08-11
 >
-> **Ветка:** `docs/statistical-gate-framework`
+> **Ветка:** `feat/p4-figure4-reproduction`
 >
-> **Текущий статус:** P3V выполняется по замороженному sensitivity/power protocol; P4 остаётся заблокирован
+> **Текущий статус:** P4 completed; corrected operational validity passed; scientific family inconclusive
 >
-> **Следующий шаг:** downstream gate-margin sensitivity и power/compute design; P4 заблокирован
+> **Следующий шаг:** P5 licensed event-level data feasibility и frozen universe/split
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -388,7 +388,7 @@ source TOML после запуска не переписывается под �
 | P3. Jump simulator и theorem checks | Synthetic | **completed; gate failed** | Invariants прошли; flow/control precision gates не прошли |
 | P3S. Statistical gate audit | Common | **completed** | Gates classified; TOST/superiority/multiplicity/power policy accepted |
 | P3V. Margin sensitivity и powered validation | Synthetic | **completed; supported** | SESOI bounded by downstream distortion; new independent confirmatory runs passed |
-| P4. Figures 2/4/5 и paper report | Synthetic | **in progress** | Claim matrix с reproduced/not-reproduced/underdetermined |
+| P4. Figures 2/4/5 и paper report | Synthetic | **completed** | Partial reproduction; corrected operational validity passed; scientific family inconclusive |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
 | P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
@@ -661,12 +661,40 @@ rate loss at $\theta_D$, 5--6% at $\theta^*$) сравниваются с confid
 Перед новым Figure 4 run legacy `SIM-FIG4-001` заменяется новым ID. Inward-shift claim
 требует family-adjusted one-sided lower bound выше заранее обоснованного minimum shift;
 rate/loss estimates публикуются с seed-cluster intervals. Numerical refinement проходит
-только equivalence test. Minimum 100 intervals остаётся operational floor и не заменяет
-power analysis.
+только equivalence test. Pilot amendment заменил эвристический floor 100 на pathwise floor
+20, но post-target audit выявил, что и новый floor не имел statistical/power justification.
+ADR-0009 оставляет counts coverage diagnostic и использует powered seed-cluster design для
+stochastic решения.
 
 Непосредственный следующий шаг: реализовать continuous-crossing policy monitor,
 preregister `SIM-FIG4-002` и до target inspection benchmark-ом выбрать CPU/GPU execution
 для полного, а не endpoint-only, kernel.
+
+P4 pilot и target freeze выполнены 2026-08-11. CPU pilot
+`20260811T200458288216Z-d9d6dc74bb9e-det` занял `186.996 s`; эквивалентный hybrid
+CPU/CUDA pilot `20260811T201826249541Z-d9d6dc74bb9e-det` — `34.424 s` (`5.43x`).
+Target `SIM-FIG4-002` preregistered на трёх response rows, 30 новых seeds, horizon 300,
+grid step 0.05, 10,000 bootstrap draws и 150-second stop budget. Power calculation,
+minimum effect 0.05 и secondary refinement limitation зафиксированы в
+[`p4-figure-reconstruction.md`](protocols/synthetic/p4-figure-reconstruction.md) до target.
+Figures 2 и 5 генерируются как явно illustrative artifacts того же run.
+
+Target выполнен один раз из clean commit `ca9aa7c1e9841fccb35f47f41a8e0863e795d3c7`:
+`SIM-FIG4-002/20260811T202753134457Z-837035232ead-det`, runtime `34.244 s`.
+Original runner status `acceptance_failed` был вызван только all-cell interval floor: minimum
+12 против 20 в far-right high-gamma cells. Post-target methodological audit установил, что это
+необоснованный count heuristic над зависимыми within-path intervals. ADR-0009 пересчитывает
+решение без изменения raw data или scientific tests: все corrected operational gates прошли.
+Inward shift 15% и 20% supported для gamma `0.272/0.342`, high-gamma 5% inconclusive;
+refinement family inconclusive. P4 получает status
+**completed / operational validity passed / scientific inconclusive**.
+Corrected review policy `p4-operational-validity-v2` выполнена implementation file из clean
+commit `5c60e490f02b6036d28160df94cce634aee23280`; review artifact SHA-256
+`f88615979b4b5c905ec541f715ff4ca6f938f66bf9f1f70c9fa2c3224ffd4466`.
+Полный evidence report: [`paper-reproduction.md`](reports/paper-reproduction.md).
+
+Следующий шаг — P5: выбрать licensed event-level source и до просмотра P&L заморозить
+universe, eligibility и chronological split. P4 target не перезапускается.
 
 ### P5. Data feasibility, licensing и frozen universe
 
@@ -871,7 +899,9 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 | `SIM-MOMENTS-001` | `cfg/experiments/sim_moments_001.toml` | Parity, drift, variance, ACF, occupancy | acceptance failed; `20260811T172240473272Z-060cfab011c3-det` |
 | `SIM-UNBALANCED-001` | `cfg/experiments/sim_unbalanced_001.toml` | One-factor parity-drift negative control | acceptance failed; `20260811T172916459381Z-5497c39af2dd-det` |
 | `SIM-FIG4-001` | `cfg/experiments/sim_fig4_001.toml` | Jump versus surrogate band sweep | blocked by P3; not run; underdetermined-author-settings |
-| `SIM-FIG5-001` | `cfg/experiments/sim_fig5_001.toml` | Strategy path, fills, wealth identities | pending-illustrative |
+| `SIM-FIG4-PILOT-002` | `cfg/experiments/sim_fig4_pilot_002.toml` | Crossing/variance/compute pilot | completed; non-claim; operational floor expectedly missed |
+| `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | completed; acceptance failed; science inconclusive; `20260811T202753134457Z-837035232ead-det` |
+| `SIM-FIG5-001` | integrated into `SIM-FIG4-002` artifacts | Strategy path, fills, wealth identities | completed illustrative artifact |
 | `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | Eligibility, quality, split freeze | pending-data-source |
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Oracle/causal filter diagnostics | pending |
 | `BT-SMOKE-001` | `cfg/experiments/bt_smoke_001.toml` | Toy ledger and no-look-ahead | pending |
@@ -915,20 +945,9 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 
 ## 9. Ближайший исполняемый шаг
 
-Текущие `SIM-MOMENTS-001` и `SIM-UNBALANCED-001` не перезапускаются и не
-переинтерпретируются. Следующий шаг — P3V downstream sensitivity **до** нового target
-output:
-
-1. оценить, как контролируемое смещение mean/variance/flow/drift/ACF меняет Figure 4
-   peak, normalized rate и rate-loss estimands;
-2. из допустимого distortion claim вывести SESOI и stricter numerical margins, а не
-   переносить old heuristic `2/3/5%`;
-3. по old seeds как disjoint pilot оценить cluster variance и сравнить horizon/seeds/
-   estimator варианты по power per compute;
-4. зарегистрировать новые `SIM-*002` configs с entirely new confirmatory seeds,
-   familywise inference, fixed sample/precision stop и statistical-gates-v1 artifacts;
-5. только после powered balanced/control validation решать, разблокирован ли новый
-   Figure 4 experiment.
-
-До этого P4 и strategy simulation blocked. Empirical data-feasibility work может идти
-независимо, но не может ссылаться на текущий P3 как на полностью validated simulator.
+P4 завершён без post-target data extension. Ошибочный interval-floor decision superseded
+отдельным deterministic review существующих raw artifacts; model paths, estimands и scientific
+tests не менялись. Следующий шаг — P5 data feasibility: выбрать
+licensed event-level L1/L2 source, зафиксировать venue/instruments/calendar/cost metadata,
+preregister large-tick eligibility cutoffs и chronological train/validation/test split до
+любого strategy P&L. При отсутствии лицензируемых данных stage получает `blocked-data`.

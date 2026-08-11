@@ -102,7 +102,7 @@ def git_provenance(repository_root: Path) -> dict[str, Any]:
 
 def environment_provenance(repository_root: Path) -> dict[str, Any]:
     dependencies: dict[str, str] = {}
-    for distribution in ("ot-micromr", "numpy", "scipy", "matplotlib"):
+    for distribution in ("ot-micromr", "numpy", "scipy", "matplotlib", "torch"):
         try:
             dependencies[distribution] = importlib.metadata.version(distribution)
         except importlib.metadata.PackageNotFoundError:
@@ -121,6 +121,17 @@ def environment_provenance(repository_root: Path) -> dict[str, Any]:
             available_memory_bytes = int(os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
         except (OSError, ValueError):
             pass
+    gpu: dict[str, Any] = {"available": False, "device": None, "cuda_runtime": None}
+    try:
+        import torch
+    except ImportError:
+        pass
+    else:
+        gpu["available"] = bool(torch.cuda.is_available())
+        gpu["cuda_runtime"] = torch.version.cuda
+        if torch.cuda.is_available():
+            gpu["device"] = torch.cuda.get_device_name(0)
+            gpu["compute_capability"] = list(torch.cuda.get_device_capability(0))
     return {
         "python": {
             "version": platform.python_version(),
@@ -134,8 +145,7 @@ def environment_provenance(repository_root: Path) -> dict[str, Any]:
             "machine": platform.machine(),
             "logical_cpu_count": os.cpu_count(),
             "available_memory_bytes_at_start": available_memory_bytes,
-            "gpu": "not_used",
-            "accelerator_driver": "not_applicable",
+            "gpu": gpu,
         },
     }
 

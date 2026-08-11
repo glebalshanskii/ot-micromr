@@ -38,7 +38,8 @@ ANALYTICAL_EXPERIMENTS = {"ANA-SMOKE-001", "ANA-FIG3-001"}
 BALANCED_SIMULATION_EXPERIMENTS = {"SIM-MOMENTS-001", "SIM-MOMENTS-002"}
 UNBALANCED_SIMULATION_EXPERIMENTS = {"SIM-UNBALANCED-001", "SIM-UNBALANCED-002"}
 SIMULATION_EXPERIMENTS = BALANCED_SIMULATION_EXPERIMENTS | UNBALANCED_SIMULATION_EXPERIMENTS
-SUPPORTED_EXPERIMENTS = ANALYTICAL_EXPERIMENTS | SIMULATION_EXPERIMENTS
+FIGURE4_EXPERIMENTS = {"SIM-FIG4-PILOT-001", "SIM-FIG4-PILOT-002", "SIM-FIG4-002"}
+SUPPORTED_EXPERIMENTS = ANALYTICAL_EXPERIMENTS | SIMULATION_EXPERIMENTS | FIGURE4_EXPERIMENTS
 
 
 def _deep_freeze(value: Any) -> Any:
@@ -186,10 +187,14 @@ def _validate_common(data: Mapping[str, Any]) -> None:
         raise ConfigError("RunSpec.mode: executable synthetic experiments require 'paper-faithful'")
     _string(data, "objective", "RunSpec")
     _string_sequence(data, "claim_ids", "RunSpec")
-    if _boolean(data, "orders_enabled", "RunSpec"):
-        raise ConfigError("RunSpec.orders_enabled: current executable experiments cannot create orders")
+    orders_enabled = _boolean(data, "orders_enabled", "RunSpec")
+    if orders_enabled != (experiment_id in FIGURE4_EXPERIMENTS):
+        expected = experiment_id in FIGURE4_EXPERIMENTS
+        raise ConfigError(f"RunSpec.orders_enabled: expected {expected}")
     _boolean(data, "claim_eligible", "RunSpec")
 
+    if experiment_id in FIGURE4_EXPERIMENTS:
+        return
     if experiment_id in SIMULATION_EXPERIMENTS:
         _validate_simulation_common(data, experiment_id)
         return
@@ -1040,11 +1045,585 @@ def _validate_simulation_evaluation_v2(data: Mapping[str, Any], experiment_id: s
         _boolean(acceptance, key, "RunSpec.acceptance")
 
 
+def _validate_positive_unique_seed_array(
+    table: Mapping[str, Any], key: str, path: str
+) -> tuple[int, ...]:
+    values = table.get(key)
+    if (
+        not isinstance(values, list)
+        or not values
+        or any(isinstance(item, bool) or not isinstance(item, int) or item <= 0 for item in values)
+        or len(set(values)) != len(values)
+    ):
+        raise ConfigError(f"{path}.{key}: expected unique positive integer array")
+    return tuple(values)
+
+
+def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
+    pilot = experiment_id.startswith("SIM-FIG4-PILOT-")
+    if _boolean(data, "claim_eligible", "RunSpec") != (not pilot):
+        raise ConfigError(f"RunSpec.claim_eligible: expected {not pilot}")
+
+    seed = _table(data, "seed_policy")
+    seed_required = {
+        "rng_used",
+        "rng_algorithm",
+        "calibration_seeds",
+        "strategy_seeds",
+        "deterministic_replay_seeds",
+        "mapping",
+        "bootstrap_seed",
+        "stream_mapping_version",
+    }
+    if not pilot:
+        seed_required |= {"bridge_rng_algorithm", "bridge_seed", "bridge_seed_mapping"}
+    _expect_keys(
+        seed,
+        seed_required,
+        "RunSpec.seed_policy",
+    )
+    if not _boolean(seed, "rng_used", "RunSpec.seed_policy"):
+        raise ConfigError("RunSpec.seed_policy.rng_used: expected true")
+    if _string(seed, "rng_algorithm", "RunSpec.seed_policy") != "numpy.random.PCG64DXSM":
+        raise ConfigError("RunSpec.seed_policy.rng_algorithm: unexpected algorithm")
+    calibration_seeds = _validate_positive_unique_seed_array(
+        seed, "calibration_seeds", "RunSpec.seed_policy"
+    )
+    strategy_seeds = _validate_positive_unique_seed_array(
+        seed, "strategy_seeds", "RunSpec.seed_policy"
+    )
+    replay_seeds = _validate_positive_unique_seed_array(
+        seed, "deterministic_replay_seeds", "RunSpec.seed_policy"
+    )
+    if set(calibration_seeds) & set(strategy_seeds):
+        raise ConfigError("RunSpec.seed_policy: calibration and strategy seeds must be disjoint")
+    if any(value not in strategy_seeds for value in replay_seeds):
+        raise ConfigError("RunSpec.seed_policy.deterministic_replay_seeds: expected strategy seeds")
+    if pilot and (len(calibration_seeds), len(strategy_seeds)) != (6, 6):
+        raise ConfigError("RunSpec.seed_policy: pilot requires six calibration and strategy seeds")
+    if not pilot and (len(calibration_seeds), len(strategy_seeds)) != (12, 30):
+        raise ConfigError("RunSpec.seed_policy: target requires 12 calibration and 30 strategy seeds")
+    _string(seed, "mapping", "RunSpec.seed_policy")
+    _integer(seed, "bootstrap_seed", "RunSpec.seed_policy", positive=True)
+    expected_stream_mapping = (
+        "figure4_row_resolution_cuda_bridge_v3"
+        if not pilot
+        else "figure4_row_resolution_policy_bridge_v2"
+    )
+    if _string(seed, "stream_mapping_version", "RunSpec.seed_policy") != expected_stream_mapping:
+        raise ConfigError("RunSpec.seed_policy.stream_mapping_version: unexpected mapping")
+    if not pilot:
+        if _string(seed, "bridge_rng_algorithm", "RunSpec.seed_policy") != "torch.cuda.Philox":
+            raise ConfigError("RunSpec.seed_policy.bridge_rng_algorithm: unexpected algorithm")
+        _integer(seed, "bridge_seed", "RunSpec.seed_policy", positive=True)
+        _string(seed, "bridge_seed_mapping", "RunSpec.seed_policy")
+
+    units = _table(data, "units")
+    _expect_keys(
+        units,
+        {"time", "price", "quantity", "cash", "timezone", "normalization"},
+        "RunSpec.units",
+    )
+    expected_units = {
+        "time": "second",
+        "price": "synthetic_price_unit",
+        "quantity": "lot",
+        "cash": "synthetic_quote_currency",
+        "timezone": "UTC",
+        "normalization": "row_specific_alpha_and_calibrated_s_g",
+    }
+    for key, expected in expected_units.items():
+        if _string(units, key, "RunSpec.units") != expected:
+            raise ConfigError(f"RunSpec.units.{key}: expected {expected!r}")
+
+    numerics = _table(data, "numerics")
+    numerics_required = {
+        "market_float_dtype",
+        "reduction_float_dtype",
+        "simulation_algorithm",
+        "primary_resolution_epsilon",
+        "refinement_epsilons",
+        "max_time_step_rule",
+        "max_event_probability_rule",
+        "bridge_crossing_probability",
+        "bridge_probability_cutoff",
+        "bridge_only_hit_time_rule",
+        "omitted_probability_budget",
+        "root_lower_margin_ratio",
+        "root_upper_u_ratio",
+        "root_xtol",
+        "root_rtol",
+        "root_max_iterations",
+        "cpu_workers",
+        "gpu_reduction_enabled",
+        "gpu_compile_enabled",
+        "gpu_fallback",
+    }
+    if not pilot:
+        numerics_required |= {"gpu_crossing_enabled", "gpu_chunk_steps"}
+    _expect_keys(
+        numerics,
+        numerics_required,
+        "RunSpec.numerics",
+    )
+    expected_numerics = {
+        "market_float_dtype": "float64",
+        "reduction_float_dtype": "float32",
+        "simulation_algorithm": "adaptive_left_hazard_single_jump_v2",
+        "bridge_crossing_probability": "exact_one_sided_brownian_bridge",
+        "bridge_only_hit_time_rule": "step_midpoint",
+        "gpu_fallback": "numpy_float64",
+    }
+    for key, expected in expected_numerics.items():
+        if _string(numerics, key, "RunSpec.numerics") != expected:
+            raise ConfigError(f"RunSpec.numerics.{key}: expected {expected!r}")
+    for key in ("max_time_step_rule", "max_event_probability_rule"):
+        _string(numerics, key, "RunSpec.numerics")
+    for key in (
+        "primary_resolution_epsilon",
+        "bridge_probability_cutoff",
+        "omitted_probability_budget",
+        "root_lower_margin_ratio",
+        "root_upper_u_ratio",
+        "root_xtol",
+        "root_rtol",
+    ):
+        _number(numerics, key, "RunSpec.numerics", positive=True)
+    epsilons = _number_sequence(numerics, "refinement_epsilons", "RunSpec.numerics")
+    expected_epsilons = (0.01, 0.005)
+    if epsilons != expected_epsilons:
+        raise ConfigError(f"RunSpec.numerics.refinement_epsilons: expected {expected_epsilons}")
+    _integer(numerics, "root_max_iterations", "RunSpec.numerics", positive=True)
+    workers = _integer(numerics, "cpu_workers", "RunSpec.numerics", positive=True)
+    if workers > 20:
+        raise ConfigError("RunSpec.numerics.cpu_workers: expected at most 20")
+    _boolean(numerics, "gpu_reduction_enabled", "RunSpec.numerics")
+    _boolean(numerics, "gpu_compile_enabled", "RunSpec.numerics")
+    if not pilot:
+        if not _boolean(numerics, "gpu_crossing_enabled", "RunSpec.numerics"):
+            raise ConfigError("RunSpec.numerics.gpu_crossing_enabled: expected true")
+        _integer(numerics, "gpu_chunk_steps", "RunSpec.numerics", positive=True)
+
+    inputs = _table(data, "inputs")
+    _expect_keys(
+        inputs,
+        {
+            "source_kind",
+            "paper_version",
+            "paper_pdf_sha256",
+            "protocol_path",
+            "parameter_provenance",
+            "dataset",
+            "dataset_reason",
+        },
+        "RunSpec.inputs",
+    )
+    if _string(inputs, "source_kind", "RunSpec.inputs") != "paper_model_project_parameters":
+        raise ConfigError("RunSpec.inputs.source_kind: unexpected source")
+    if _string(inputs, "paper_version", "RunSpec.inputs") != "arXiv:2608.00885v1":
+        raise ConfigError("RunSpec.inputs.paper_version: unexpected version")
+    paper_hash = _string(inputs, "paper_pdf_sha256", "RunSpec.inputs")
+    if len(paper_hash) != 64 or any(char not in "0123456789abcdef" for char in paper_hash):
+        raise ConfigError("RunSpec.inputs.paper_pdf_sha256: expected lowercase SHA-256")
+    for key in ("protocol_path", "parameter_provenance", "dataset_reason"):
+        _string(inputs, key, "RunSpec.inputs")
+    if _string(inputs, "dataset", "RunSpec.inputs") != "not_applicable":
+        raise ConfigError("RunSpec.inputs.dataset: expected not_applicable")
+
+    model = _table(data, "model")
+    _expect_keys(
+        model,
+        {
+            "enabled",
+            "delta_price",
+            "sigma_x_price_per_sqrt_second",
+            "mu_s_per_second",
+            "mu_o_per_second",
+            "mu_c_per_second",
+            "response_scale_alpha_per_second_grid",
+            "alpha_s_fraction_of_alpha",
+            "alpha_o_fraction_of_alpha",
+            "alpha_c_fraction_of_alpha",
+            "balanced_response_rule",
+            "initial_state",
+        },
+        "RunSpec.model",
+    )
+    if not _boolean(model, "enabled", "RunSpec.model"):
+        raise ConfigError("RunSpec.model.enabled: expected true")
+    for key in (
+        "delta_price",
+        "sigma_x_price_per_sqrt_second",
+        "mu_s_per_second",
+        "mu_o_per_second",
+        "mu_c_per_second",
+    ):
+        _number(model, key, "RunSpec.model", positive=True)
+    alpha_grid = _number_sequence(model, "response_scale_alpha_per_second_grid", "RunSpec.model")
+    if len(alpha_grid) < 3 or any(value <= 0.0 for value in alpha_grid):
+        raise ConfigError("RunSpec.model.response_scale_alpha_per_second_grid: invalid grid")
+    if any(right <= left for left, right in zip(alpha_grid, alpha_grid[1:])):
+        raise ConfigError("RunSpec.model.response_scale_alpha_per_second_grid: must increase")
+    if not pilot and alpha_grid != (0.65, 1.0, 2.0):
+        raise ConfigError("RunSpec.model.response_scale_alpha_per_second_grid: unexpected target grid")
+    fractions = tuple(
+        _number(model, key, "RunSpec.model")
+        for key in (
+            "alpha_s_fraction_of_alpha",
+            "alpha_o_fraction_of_alpha",
+            "alpha_c_fraction_of_alpha",
+        )
+    )
+    if fractions != (0.5, 0.0, 1.0):
+        raise ConfigError("RunSpec.model: unexpected balanced response fractions")
+    _string(model, "balanced_response_rule", "RunSpec.model")
+    initial = _table(model, "initial_state", "RunSpec.model")
+    _expect_keys(
+        initial,
+        {
+            "time_seconds",
+            "mid_half_ticks",
+            "efficient_price",
+            "inventory_lots",
+            "mid_marked_wealth_quote_currency",
+            "efficient_price_marked_wealth_quote_currency",
+            "state_representation",
+        },
+        "RunSpec.model.initial_state",
+    )
+    if _number(initial, "time_seconds", "RunSpec.model.initial_state") != 0.0:
+        raise ConfigError("RunSpec.model.initial_state.time_seconds: expected zero")
+    if _integer(initial, "mid_half_ticks", "RunSpec.model.initial_state") != 1:
+        raise ConfigError("RunSpec.model.initial_state.mid_half_ticks: expected one")
+    delta = float(model["delta_price"])
+    if _number(initial, "efficient_price", "RunSpec.model.initial_state") != delta / 2.0:
+        raise ConfigError("RunSpec.model.initial_state.efficient_price: expected delta/2")
+    for key in (
+        "inventory_lots",
+        "mid_marked_wealth_quote_currency",
+        "efficient_price_marked_wealth_quote_currency",
+    ):
+        if _number(initial, key, "RunSpec.model.initial_state") != 0.0:
+            raise ConfigError(f"RunSpec.model.initial_state.{key}: expected zero")
+    _string(initial, "state_representation", "RunSpec.model.initial_state")
+
+    simulation = _table(data, "simulation")
+    _expect_keys(
+        simulation,
+        {
+            "enabled",
+            "calibration_burn_in_reversion_times",
+            "calibration_sampling_reversion_times",
+            "calibration_observation_interval_reversion_times",
+            "market_burn_in_reversion_times",
+            "strategy_burn_in_reversion_times",
+            "horizon_reversion_times",
+            "replications",
+            "event_log",
+            "fill_log",
+            "simultaneous_book_events_allowed",
+            "strategy_monitoring_enabled",
+        },
+        "RunSpec.simulation",
+    )
+    if not _boolean(simulation, "enabled", "RunSpec.simulation"):
+        raise ConfigError("RunSpec.simulation.enabled: expected true")
+    for key in (
+        "calibration_burn_in_reversion_times",
+        "calibration_sampling_reversion_times",
+        "calibration_observation_interval_reversion_times",
+        "market_burn_in_reversion_times",
+        "strategy_burn_in_reversion_times",
+        "horizon_reversion_times",
+    ):
+        _number(simulation, key, "RunSpec.simulation", positive=True)
+    if not pilot and float(simulation["horizon_reversion_times"]) != 300.0:
+        raise ConfigError("RunSpec.simulation.horizon_reversion_times: expected target horizon 300")
+    if _integer(simulation, "replications", "RunSpec.simulation", positive=True) != len(
+        strategy_seeds
+    ):
+        raise ConfigError("RunSpec.simulation.replications: disagrees with strategy seeds")
+    for key, expected in (
+        ("event_log", False),
+        ("fill_log", False),
+        ("simultaneous_book_events_allowed", False),
+        ("strategy_monitoring_enabled", True),
+    ):
+        if _boolean(simulation, key, "RunSpec.simulation") != expected:
+            raise ConfigError(f"RunSpec.simulation.{key}: expected {expected}")
+
+    strategy = _table(data, "strategy")
+    _expect_keys(
+        strategy,
+        {
+            "enabled",
+            "policy",
+            "threshold_multiplier_theta_over_theta_d_grid",
+            "additional_thresholds",
+            "initial_inventory_lots",
+            "first_entry_quantity_lots",
+            "subsequent_flip_quantity_lots",
+            "flat_between_thresholds",
+        },
+        "RunSpec.strategy",
+    )
+    if not _boolean(strategy, "enabled", "RunSpec.strategy"):
+        raise ConfigError("RunSpec.strategy.enabled: expected true")
+    if _string(strategy, "policy", "RunSpec.strategy") != "symmetric_flip_band":
+        raise ConfigError("RunSpec.strategy.policy: unexpected policy")
+    thresholds = _number_sequence(
+        strategy, "threshold_multiplier_theta_over_theta_d_grid", "RunSpec.strategy"
+    )
+    if any(value <= 0.0 for value in thresholds) or any(
+        right <= left for left, right in zip(thresholds, thresholds[1:])
+    ):
+        raise ConfigError("RunSpec.strategy.threshold_multiplier_theta_over_theta_d_grid: invalid")
+    expected_target_thresholds = tuple(0.5 + 0.05 * index for index in range(23))
+    if not pilot and (
+        len(thresholds) != len(expected_target_thresholds)
+        or any(
+            not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-12)
+            for actual, expected in zip(thresholds, expected_target_thresholds)
+        )
+    ):
+        raise ConfigError("RunSpec.strategy.threshold_multiplier_theta_over_theta_d_grid: unexpected target grid")
+    if _string_sequence(strategy, "additional_thresholds", "RunSpec.strategy") != (
+        "theta_star",
+    ):
+        raise ConfigError("RunSpec.strategy.additional_thresholds: expected theta_star")
+    if (
+        _integer(strategy, "initial_inventory_lots", "RunSpec.strategy") != 0
+        or _integer(strategy, "first_entry_quantity_lots", "RunSpec.strategy") != 1
+        or _integer(strategy, "subsequent_flip_quantity_lots", "RunSpec.strategy") != 2
+        or _boolean(strategy, "flat_between_thresholds", "RunSpec.strategy")
+    ):
+        raise ConfigError("RunSpec.strategy: unexpected inventory transition contract")
+
+    execution = _table(data, "execution")
+    _expect_keys(
+        execution,
+        {
+            "enabled",
+            "fill_convention",
+            "realized_half_spread_rule",
+            "threshold_reference_phi_price",
+            "contract_multiplier_quote_currency_per_price_lot",
+            "latency_seconds",
+            "fee_quote_currency_per_lot",
+            "slippage_price",
+            "market_impact_enabled",
+            "partial_fills_enabled",
+            "terminal_liquidation",
+            "wealth_markings",
+        },
+        "RunSpec.execution",
+    )
+    if not _boolean(execution, "enabled", "RunSpec.execution"):
+        raise ConfigError("RunSpec.execution.enabled: expected true")
+    for key in ("fill_convention", "realized_half_spread_rule"):
+        _string(execution, key, "RunSpec.execution")
+    for key in (
+        "threshold_reference_phi_price",
+        "contract_multiplier_quote_currency_per_price_lot",
+    ):
+        _number(execution, key, "RunSpec.execution", positive=True)
+    for key in ("latency_seconds", "fee_quote_currency_per_lot", "slippage_price"):
+        if _number(execution, key, "RunSpec.execution") != 0.0:
+            raise ConfigError(f"RunSpec.execution.{key}: expected zero")
+    for key in ("market_impact_enabled", "partial_fills_enabled", "terminal_liquidation"):
+        if _boolean(execution, key, "RunSpec.execution"):
+            raise ConfigError(f"RunSpec.execution.{key}: expected false")
+    if set(_string_sequence(execution, "wealth_markings", "RunSpec.execution")) != {
+        "mid_marked",
+        "efficient_price_marked",
+    }:
+        raise ConfigError("RunSpec.execution.wealth_markings: unexpected markings")
+
+    evaluation = _table(data, "evaluation")
+    evaluation_required = {
+        "primary_metric",
+        "target_realized_gamma_ratios",
+        "aggregation",
+        "confidence_interval",
+        "bootstrap_replications",
+        "familywise_alpha",
+        "power_target",
+        "minimum_complete_interfill_intervals_per_seed_and_policy",
+        "rate_normalization",
+        "peak_rule",
+        "rate_loss_rule",
+    }
+    if not pilot:
+        evaluation_required |= {
+            "primary_family_id",
+            "inward_shift_minimum_effect",
+            "inward_shift_planning_alternative",
+            "inward_shift_pilot_cluster_standard_deviation",
+            "planned_strategy_seed_count",
+            "refinement_family_id",
+            "refinement_rate_equivalence_margin",
+            "maximum_target_wall_seconds",
+        }
+    _expect_keys(
+        evaluation,
+        evaluation_required,
+        "RunSpec.evaluation",
+    )
+    for key in (
+        "primary_metric",
+        "aggregation",
+        "confidence_interval",
+        "rate_normalization",
+        "peak_rule",
+        "rate_loss_rule",
+    ):
+        _string(evaluation, key, "RunSpec.evaluation")
+    targets = _number_sequence(evaluation, "target_realized_gamma_ratios", "RunSpec.evaluation")
+    if targets != (0.28, 0.36, 0.47):
+        raise ConfigError("RunSpec.evaluation.target_realized_gamma_ratios: unexpected targets")
+    bootstrap_replications = _integer(
+        evaluation, "bootstrap_replications", "RunSpec.evaluation", positive=True
+    )
+    if not pilot and bootstrap_replications != 10_000:
+        raise ConfigError("RunSpec.evaluation.bootstrap_replications: expected 10000")
+    if (
+        _number(evaluation, "familywise_alpha", "RunSpec.evaluation") != 0.05
+        or _number(evaluation, "power_target", "RunSpec.evaluation") != 0.90
+    ):
+        raise ConfigError("RunSpec.evaluation: expected alpha=0.05 and power=0.90")
+    _integer(
+        evaluation,
+        "minimum_complete_interfill_intervals_per_seed_and_policy",
+        "RunSpec.evaluation",
+        positive=True,
+    )
+    if not pilot:
+        for key in ("primary_family_id", "refinement_family_id"):
+            _string(evaluation, key, "RunSpec.evaluation")
+        for key in (
+            "inward_shift_minimum_effect",
+            "inward_shift_planning_alternative",
+            "inward_shift_pilot_cluster_standard_deviation",
+            "refinement_rate_equivalence_margin",
+            "maximum_target_wall_seconds",
+        ):
+            _number(evaluation, key, "RunSpec.evaluation", positive=True)
+        if _integer(
+            evaluation, "planned_strategy_seed_count", "RunSpec.evaluation", positive=True
+        ) != len(strategy_seeds):
+            raise ConfigError(
+                "RunSpec.evaluation.planned_strategy_seed_count: disagrees with strategy seeds"
+            )
+        expected_target_values = {
+            "inward_shift_minimum_effect": 0.05,
+            "inward_shift_planning_alternative": 0.20,
+            "inward_shift_pilot_cluster_standard_deviation": 0.234,
+            "refinement_rate_equivalence_margin": 0.02,
+            "maximum_target_wall_seconds": 150.0,
+        }
+        for key, expected in expected_target_values.items():
+            if float(evaluation[key]) != expected:
+                raise ConfigError(f"RunSpec.evaluation.{key}: expected frozen value {expected}")
+        from ot_micromr.statistical_gates import normal_approximation_sample_size
+
+        required_seeds = normal_approximation_sample_size(
+            standard_deviation=float(
+                evaluation["inward_shift_pilot_cluster_standard_deviation"]
+            ),
+            distance_to_null=float(evaluation["inward_shift_planning_alternative"])
+            - float(evaluation["inward_shift_minimum_effect"]),
+            alpha=float(evaluation["familywise_alpha"]) / 3.0,
+            power=float(evaluation["power_target"]),
+        )
+        if len(strategy_seeds) < required_seeds:
+            raise ConfigError("RunSpec.evaluation: target seed count is below powered design")
+
+    acceptance = _table(data, "acceptance")
+    _expect_keys(
+        acceptance,
+        {
+            "require_all_replications",
+            "require_all_response_rows",
+            "require_all_thresholds",
+            "require_nonflat_before_measurement",
+            "minimum_complete_interfill_intervals_per_seed_and_policy",
+            "invariant_violation_count_max",
+            "nonfinite_value_count_max",
+            "omitted_probability_sum_max",
+            "dawson_root_abs_residual_max",
+            "require_clean_tree_for_claim",
+            "stop_on_invariant_violation",
+            "stop_on_nonfinite_value",
+            "result_label",
+        },
+        "RunSpec.acceptance",
+    )
+    for key in (
+        "require_all_replications",
+        "require_all_response_rows",
+        "require_all_thresholds",
+        "require_nonflat_before_measurement",
+        "require_clean_tree_for_claim",
+        "stop_on_invariant_violation",
+        "stop_on_nonfinite_value",
+    ):
+        _boolean(acceptance, key, "RunSpec.acceptance")
+    acceptance_minimum_intervals = _integer(
+        acceptance,
+        "minimum_complete_interfill_intervals_per_seed_and_policy",
+        "RunSpec.acceptance",
+        positive=True,
+    )
+    if not pilot and acceptance_minimum_intervals != 20:
+        raise ConfigError(
+            "RunSpec.acceptance.minimum_complete_interfill_intervals_per_seed_and_policy: expected 20"
+        )
+    for key in (
+        "invariant_violation_count_max",
+        "nonfinite_value_count_max",
+        "omitted_probability_sum_max",
+        "dawson_root_abs_residual_max",
+    ):
+        if _number(acceptance, key, "RunSpec.acceptance") < 0.0:
+            raise ConfigError(f"RunSpec.acceptance.{key}: expected nonnegative")
+    if _boolean(acceptance, "require_clean_tree_for_claim", "RunSpec.acceptance") != (not pilot):
+        raise ConfigError("RunSpec.acceptance.require_clean_tree_for_claim: wrong pilot/target value")
+    _string(acceptance, "result_label", "RunSpec.acceptance")
+
+    artifacts = _table(data, "artifacts")
+    _expect_keys(
+        artifacts, {"output_root", "required_classes", "optional_classes"}, "RunSpec.artifacts"
+    )
+    if _string(artifacts, "output_root", "RunSpec.artifacts") != "outputs":
+        raise ConfigError("RunSpec.artifacts.output_root: expected outputs")
+    required = set(_string_sequence(artifacts, "required_classes", "RunSpec.artifacts"))
+    expected_required = {
+        "source_config",
+        "resolved_runspec",
+        "manifest",
+        "log",
+        "metrics_summary",
+        "metrics_raw",
+        "table",
+        "figure_data",
+        "figure",
+        "calibration_table",
+        "fill_log",
+    }
+    if required != expected_required:
+        raise ConfigError("RunSpec.artifacts.required_classes: unexpected P4 contract")
+    optional = artifacts.get("optional_classes")
+    if not isinstance(optional, list) or any(not isinstance(item, str) for item in optional):
+        raise ConfigError("RunSpec.artifacts.optional_classes: expected string array")
+
+
 def validate_runspec(data: Mapping[str, Any]) -> None:
     _validate_finite_tree(data)
     _validate_common(data)
     experiment_id = str(data["experiment_id"])
-    if experiment_id in ANALYTICAL_EXPERIMENTS:
+    if experiment_id in FIGURE4_EXPERIMENTS:
+        _validate_figure4(data, experiment_id)
+    elif experiment_id in ANALYTICAL_EXPERIMENTS:
         _validate_numerics(data, experiment_id)
         _validate_model(data, experiment_id)
         if experiment_id == "ANA-SMOKE-001":
