@@ -15,11 +15,8 @@ scientific family осталась `inconclusive`; подробности — в
 uv sync --locked
 ```
 
-Для Figure 4 требуется CUDA extra:
-
-```bash
-uv sync --locked --extra gpu
-```
+PyTorch является обязательной вычислительной зависимостью для CPU и CUDA paths;
+отдельного `gpu` extra нет. Figure 4 использует CUDA-capable installation из lockfile.
 
 ## Experiments
 
