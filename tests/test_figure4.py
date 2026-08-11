@@ -43,7 +43,7 @@ class Figure4SimulationTests(unittest.TestCase):
 
     def test_calibration_retains_final_observation_under_roundoff(self) -> None:
         values = self._tiny_values()
-        values["model"]["response_scale_alpha_per_second_grid"] = [0.2]
+        values["model"]["response_scale_alpha_per_second_grid"] = [0.3]
         values["simulation"]["calibration_burn_in_reversion_times"] = 1.0
         values["simulation"]["calibration_sampling_reversion_times"] = 2.0
         values["simulation"]["calibration_observation_interval_reversion_times"] = 0.02

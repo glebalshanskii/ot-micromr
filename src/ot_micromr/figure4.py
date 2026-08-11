@@ -113,8 +113,10 @@ def _simulate_calibration_coordinate(
     epsilon = float(values["numerics"]["primary_resolution_epsilon"])
     burn = float(simulation["calibration_burn_in_reversion_times"]) / alpha
     measured = float(simulation["calibration_sampling_reversion_times"]) / alpha
-    interval = float(simulation["calibration_observation_interval_reversion_times"]) / alpha
-    interval_count = round(measured / interval)
+    requested_interval = (
+        float(simulation["calibration_observation_interval_reversion_times"]) / alpha
+    )
+    interval_count = round(measured / requested_interval)
     endpoint_rng, occurrence_rng, channel_rng, _ = _domain_streams(
         seed, row_index, epsilon, 0
     )
@@ -165,12 +167,17 @@ def _simulate_calibration_coordinate(
             tight[observation_index] = state.is_tight
             observation_index += 1
             next_observation = (
-                min(burn + observation_index * interval, total_end)
-                if observation_index <= interval_count
-                else total_end
+                total_end
+                if observation_index >= interval_count
+                else burn + measured * observation_index / interval_count
             )
     if observation_index != interval_count + 1:
-        raise RuntimeError("calibration observation schedule is incomplete")
+        raise RuntimeError(
+            "calibration observation schedule is incomplete: "
+            f"observed={observation_index}, expected={interval_count + 1}, "
+            f"time={state.time_seconds:.17g}, next={next_observation:.17g}, "
+            f"end={total_end:.17g}"
+        )
     return CalibrationPath(
         row_index=row_index,
         alpha_per_second=alpha,

@@ -64,6 +64,12 @@ independent Figure 4 artifact routing. `SIM-FIG4-PILOT-002` is the replacement; 
 all scientific settings and seeds, changes only the experiment ID and repaired infrastructure,
 and remains non-claim evidence.
 
+The first `SIM-FIG4-PILOT-002` attempt exposed a second endpoint-roundoff case at
+`alpha=0.3`, again before strategy simulation. Equal-time calibration points are therefore
+constructed from integer indices over the closed measured interval, with the last index set
+exactly to the horizon. The failed run is retained and the same preregistered scientific config
+is rerun under a new immutable run ID and code commit.
+
 ## 4. Strategy and rate
 
 Every policy starts flat after 50 market burn-in reversion times, acquires a position during
