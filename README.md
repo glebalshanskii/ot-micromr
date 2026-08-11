@@ -4,7 +4,9 @@
 торговой стратегии на event-level рыночных данных. Сейчас реализован analytical
 baseline для Dawson optimum и Figure 3; synthetic jump simulator и empirical
 backtest относятся к следующим этапам. P3 controlled jump simulator реализован, но
-его confirmatory gate не пройден из-за недостаточной precision редкой open parity.
+его historical confirmatory gate не пройден. Последующий statistical audit показал,
+что rare-open flow/drift и почти весь refinement имеют status `inconclusive`, а старые
+point-estimate rules нельзя использовать для следующих experiments.
 
 ## Environment
 
@@ -55,7 +57,14 @@ uv run ot-micromr run cfg/experiments/sim_unbalanced_001.toml
 Оба используют adaptive frozen-intensity approximation, а не exact sampler. Текущие
 run IDs и failed gates приведены в
 [`docs/reports/p3-controlled-simulation.md`](docs/reports/p3-controlled-simulation.md).
-До зарегистрированного precision extension переход к Figure 4 запрещён.
+До нового powered validation experiment переход к Figure 4 запрещён.
+
+Новые stochastic runs следуют
+[`statistical-gates-v1`](docs/protocols/common/statistical-gates.md): equality claims
+требуют equivalence test и power, directional claims — superiority over a justified
+minimum effect, а недостаточная precision даёт `inconclusive`. Следующий этап —
+downstream sensitivity и power/compute design; простого перезапуска старых configs с
+добавочными seeds не будет.
 
 Канонический статус и порядок работ: [`docs/plan.md`](docs/plan.md). Scientific
 protocol: [`docs/protocols/synthetic/paper-reproduction.md`](docs/protocols/synthetic/paper-reproduction.md).

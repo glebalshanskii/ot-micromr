@@ -1,12 +1,12 @@
 # Preregistered protocol: synthetic reproduction of Amaral (2026)
 
-- **Статус:** preregistered; target runs не запускались
-- **Protocol version:** 1.1
+- **Статус:** version 1.1 executed for P2/P3; P3 historical gates failed; future stochastic use amended
+- **Protocol version:** 1.1 historical + post-run amendment A1
 - **Дата регистрации:** 2026-08-11
 - **Paper:** Lucas Rabechini Amaral, *Optimal Trading of Microstructure Mean Reversion*, `arXiv:2608.00885v1`
 - **Paper SHA-256:** `fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba`
 - **Track / mode:** `synthetic` / `paper-faithful`
-- **Related decisions:** [`ADR-0001`](../../adr/0001-research-modes-package-and-run-contract.md), [`ADR-0002`](../../adr/0002-controlled-jump-simulation-semantics.md)
+- **Related decisions:** [`ADR-0001`](../../adr/0001-research-modes-package-and-run-contract.md), [`ADR-0002`](../../adr/0002-controlled-jump-simulation-semantics.md), [`ADR-0005`](../../adr/0005-statistical-decision-gates.md)
 - **Configs:** [`cfg/experiments/`](../../../cfg/experiments/)
 - **Results location:** `docs/reports/paper-reproduction.md` после выполнения; этот protocol не переписывается под результат
 
@@ -14,6 +14,16 @@ Pre-run clarification `2026-08-11`: до первого target run для bounde
 optimizer явно зафиксированы bounds, `xatol=10^{-12}` и `maxiter=500` в обоих
 analytical configs. Scientific estimands, grids и acceptance gates не менялись;
 target outputs при уточнении не создавались и не просматривались.
+
+Post-run amendment A1 `2026-08-11`: после выполнения P3 проведён
+[`statistical gate audit`](../../reports/statistical-gate-audit.md). Sections 9--11 и
+configs `SIM-MOMENTS-001`/`SIM-UNBALANCED-001` остаются immutable historical contract;
+их decisions не пересчитываются задним числом. Для любых новых stochastic runs этот
+protocol дополняется [`statistical-gates-v1`](../common/statistical-gates.md): equality
+требует multiplicity-aware equivalence, directional claim — superiority over justified
+minimum effect, а refinement больше не может проходить по rule `tolerance OR SE`.
+`SIM-FIG4-001` в старом виде не запускается и будет заменён новым experiment ID только
+после margin-sensitivity и power design.
 
 ## 1. Purpose и граница claims
 

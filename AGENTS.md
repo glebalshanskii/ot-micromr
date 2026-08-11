@@ -37,6 +37,11 @@ Agreed behavior, scope, research assumptions и experimental protocols фикс�
 - Каждое заявленное улучшение подтверждай ablation или контролем, объясняющим источник эффекта.
 - Сохраняй информативные отрицательные результаты: они сокращают future search space.
 - Не смешивай научные факты, интерпретации и гипотезы; явно указывай уровень уверенности.
+- Не используй fixed threshold для point estimate как единственное основание stochastic acceptance. Для equality claims применяй equivalence test, для directional claims — superiority/non-inferiority test, для связанных сравнений — paired или cluster-aware inference.
+- До confirmatory run фиксируй estimand, independent unit, effect-size/equivalence margin и его предметное обоснование, confidence level, multiplicity family, test, target power и правило `pass`/`meaningfully-different`/`inconclusive`. Pilot может оценивать variance, но не выбирать удобный margin.
+- Невозможность отвергнуть point null не доказывает equivalence; статистически значимый, но practically negligible effect не считай meaningful improvement. Недостаточную precision помечай `inconclusive`, а не `pass` или `fail`.
+- Deterministic identities, numerical error bounds, pathwise invariants, artifact completeness и data-contract checks не снабжай фиктивными p-values: для них фиксируй подходящий deterministic/error-control gate и явно отмечай statistical significance как `not_applicable`.
+- Учитывай multiplicity по всей заранее объявленной family claims. После просмотра target data изменение test, margin, family, aggregation или decision rule требует новой hypothesis/config и независимого holdout; старый результат остаётся неизменным.
 
 ## Статьи
 
