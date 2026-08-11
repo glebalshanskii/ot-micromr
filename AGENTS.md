@@ -118,6 +118,16 @@ Agreed behavior, scope, research assumptions и experimental protocols фикс�
 - Для stochastic components тестируй invariants, ranges, masks, shapes и детерминизм при фиксированном seed.
 - Не вводи абстракции «на будущее»: нужен минимум два use cases или явное снижение сложности.
 
+## Вычислительная эффективность
+
+- Всё, что допускает batch/vector representation без изменения scientific semantics, векторизуй и вычисляй векторно. Python loops в горячем пути оставляй только при подтверждённой необходимости.
+- Перед длинным запуском профилируй representative workload и сравнивай корректные реализации по wall-clock time, peak memory и, когда релевантно, throughput. Решение о backend, числе workers и batch size фиксируй в experiment record вместе с benchmark evidence.
+- Вычисления, для которых GPU даёт измеримый выигрыш с учётом transfer, compilation и warm-up overhead, выполняй на GPU через PyTorch и `torch.compile`. Всегда сохраняй eager fallback; отдельно проверяй численную эквивалентность, детерминизм и отсутствие recompilation в steady state.
+- Для CPU-кода проверяй scaling хотя бы для serial baseline и нескольких разумных значений workers вплоть до 20 доступных CPU threads. Распараллеливай только при измеримом выигрыше на representative workload; явно ограничивай thread/process pools и избегай oversubscription между process-level и library-level parallelism.
+- Если библиотека или конкретный метод поддерживает parallel execution, benchmark-ом проверяй, выгодно ли его включение. При выигрыше включай его явно и сохраняй параметры (`workers`, `threads`, backend и связанные environment variables) в config или run metadata.
+- При сопоставимых correctness, reproducibility, API stability и лицензии предпочитай библиотеки и методы с vectorized kernels, GPU support и управляемым parallel execution.
+- Не считай ускорением результат, полученный ценой изменения estimator, precision, seed semantics, acceptance protocol или полноты сохраняемых audit artifacts. Для оптимизированного пути добавляй regression test против reference implementation.
+
 ## Зависимости и сторонний код
 
 - Менеджер зависимостей — `uv`; добавляй зависимости только через `uv add ...`, не `uv pip ...`.
