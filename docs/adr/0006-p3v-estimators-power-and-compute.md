@@ -18,12 +18,14 @@ change the Figure 4 decision.
    sampler gate; neither is allowed to impersonate the other.
 3. Use a joint Holm-adjusted primary family and equivalence/superiority tests defined in the
    P3V protocol. Point estimates alone cannot pass.
-4. Use new seed labels, a fixed `20000`-reversion-time horizon and no optional extension.
+4. Use new seed labels, fixed horizons of `40000` for the balanced run and `20000` for the
+   control, and no optional extension.
 5. Process-parallelise independent paths after a worker-count benchmark. Keep post-processing
    vectorised and cap nested numerical-library threads at one per worker.
-6. Do not add PyTorch merely to port a sequential branch-heavy event loop. A GPU backend
-   requires an end-to-end `torch.compile` benchmark advantage and identical scientific
-   semantics.
+6. Do not assume that one backend fits both the sequential event generator and vectorised
+   policy evaluation. A GPU backend requires an end-to-end `torch.compile` benchmark
+   advantage and regression-equivalent scientific semantics; exact NumPy/Torch RNG stream
+   identity is not required.
 7. After the preregistered pilot sensitivity, reduce the flow margin to `0.05`, keep the
    open-drift theorem as an exact-generator gate, and use a jump-compensator stochastic
    negative control. This dated change precedes all `SIM-*002` target runs.
@@ -32,5 +34,8 @@ change the Figure 4 decision.
 
 The confirmatory run is more expensive but has a bounded compute budget and an explicit
 three-way decision. Header-only event logs replace large raw logs for `SIM-*002`; sufficient
-seed-level audit quantities and replay digests remain. P4 stays blocked until the global P3V
-family and downstream sensitivity condition both pass.
+seed-level audit quantities and replay digests remain. Both global families passed on
+2026-08-11, so P4 is unblocked.
+
+The later P4 backend decision is recorded separately in
+[`ADR-0007`](0007-p4-hybrid-cpu-cuda-backend.md).

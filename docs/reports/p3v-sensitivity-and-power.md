@@ -1,16 +1,17 @@
 # P3V sensitivity, estimators and power design
 
 - Date: 2026-08-11
-- Status: pilot complete; confirmatory runs not yet executed
+- Status: confirmatory validation supported
 - Protocol: [`p3v-powered-validation.md`](../protocols/synthetic/p3v-powered-validation.md)
 - Decision: [`ADR-0006`](../adr/0006-p3v-estimators-power-and-compute.md)
+- P4 backend decision: [`ADR-0007`](../adr/0007-p4-hybrid-cpu-cuda-backend.md)
 
 ## What was measured
 
 Historical `SIM-*001` seed labels were reused only for pilot variance and controlled fault
-injection. Confirmatory `20260821xx` seeds were not touched. The pilot used the balanced
-project parameters, `epsilon=0.01`, 20 seeds, horizon `10000`, six scenarios and 5000
-paired seed bootstraps.
+injection. At the pilot freeze, confirmatory `20260821xx` seeds had not been touched. The
+pilot used the balanced project parameters, `epsilon=0.01`, 20 seeds, horizon `10000`, six
+scenarios and 5000 paired seed bootstraps.
 
 The diagnostic strategy monitor evaluates the flip band at equal-spaced observation
 endpoints. It vectorises threshold comparisons, fill extraction and reward arithmetic but
@@ -86,13 +87,62 @@ capped at one per worker through `threadpoolctl 3.6.0`.
 | 20 | `4.084` | `4.24x` | yes |
 
 Ten workers were selected: twenty improved elapsed time by less than one percent while
-roughly doubling simultaneous process memory. The event-driven path is sequential,
-branch-heavy and tied to NumPy PCG64DXSM stream semantics. PyTorch is absent from the
-environment; no equivalent `torch.compile` implementation with a credible transfer/
-compilation-inclusive advantage exists, so a heavy GPU dependency was not added.
+roughly doubling simultaneous process memory. This choice applies to the adaptive
+event-path generator, not automatically to vectorisable strategy evaluation.
+
+## Confirmatory results
+
+Both immutable target runs used Python `3.14.0`, NumPy `2.5.2`, SciPy `1.18.0`, the
+Intel i9-12900H host, 10 processes with one native numerical-library thread each, and
+clean commit `9dedb6b44d87933147420a316e445b19cf4c5080`.
+
+| Experiment / component | Estimate | Preregistered boundary | Raw p-value | Holm adjusted p-value | Decision |
+|---|---:|---:|---:|---:|---|
+| `SIM-MOMENTS-002` flow | `0.01567` | equivalence `[-0.05, 0.05]` | `0.00629` | `0.00629` | supported |
+| `SIM-UNBALANCED-002` jump contrast | `0.23015` | superiority over `0.10` | `0.00148` | `0.00297` | supported |
+| flow primary-vs-fine | `0.00563` | equivalence `[-0.05, 0.05]` | `0.01170` | `0.01508` | supported |
+| control primary-vs-fine | `-0.03620` | equivalence `[-0.15, 0.15]` | `0.00754` | `0.01508` | supported |
+
+The flow TOST 90% interval was `[-0.00587, 0.03722]`. The unbalanced one-sided lower
+confidence bound was `0.16407`, above the minimum effect. All deterministic replays,
+generator residual checks, transition conservation rules and simulator invariants passed.
+The moments run took `1189.46 s`; the control took `583.86 s`. No new seeds or horizon
+extensions were added after inspection.
+
+Local ignored artifacts:
+
+- `outputs/SIM-MOMENTS-002/20260811T184531842286Z-4cb501542645-det/`;
+- `outputs/SIM-UNBALANCED-002/20260811T190621510298Z-f3c0ff8a3b29-det/`;
+- `outputs/p3v/global-gate.json`.
+
+The global status is `supported`; P4 is no longer blocked by P3V.
+
+## GPU feasibility before P4
+
+After the confirmatory runs, PyTorch `2.13.0+cu130` was installed as the optional `gpu`
+extra and tested on an NVIDIA RTX 3080 Ti Laptop GPU. The benchmark implements the exact
+endpoint band state machine in vectorised NumPy and compiled Torch, including alternating
+fills, spread-aware rewards and host-to-device transfer. A unit regression test compares
+the vectorised CPU implementation with the historical scalar reference.
+
+Representative workload: 20 paths, 50000 observations per path and 21 thresholds
+(21 million path-threshold observations), median of five steady-state repetitions.
+
+| Backend | End-to-end median | Speedup vs NumPy | Maximum rate error | Counts |
+|---|---:|---:|---:|---|
+| NumPy `float64` | `0.69324 s` | `1.0x` | reference | reference |
+| compiled CUDA `float32` | `0.00445 s` | `155.6x` | `6.81e-6` | exact |
+| compiled CUDA `float64` | `0.00563 s` | `123.2x` | `2.91e-13` | exact |
+
+Cold compilation cost was `3.22 s` for `float32` and `0.94 s` for `float64`; it is
+amortised by the planned repeated P4 evaluations. The P4 policy/threshold post-processing
+backend is therefore compiled CUDA `float64`. This decision does not port the adaptive
+event generator to GPU and does not require NumPy/Torch RNG sequence identity. Raw
+engineering artifact: `outputs/p3v/band-backends.json`.
 
 ## Remaining limitation
 
 The sensitivity band monitor misses intra-observation Brownian crossings. It is sufficient
-to reject unsafe validation margins but cannot establish Figure 4 itself. P4 still requires
-the continuous-crossing monitor and its own rate/peak refinement inference.
+to reject unsafe validation margins but cannot establish Figure 4 itself. The CUDA result
+applies to this exact endpoint kernel; P4 still requires the continuous-crossing monitor,
+its own CPU/GPU regression and rate/peak refinement inference before a claim-eligible run.

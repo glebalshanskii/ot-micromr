@@ -125,6 +125,7 @@ Agreed behavior, scope, research assumptions и experimental protocols фикс�
 
 ## Вычислительная эффективность
 
+- Всегда проектируй расчёты с целью минимального end-to-end wall-clock time при сохранении scientific semantics и auditability. До реализации и запуска явно оцени, где находятся главные bottlenecks, и выбирай самый быстрый подтверждённый вариант, а не первый работающий.
 - Всё, что допускает batch/vector representation без изменения scientific semantics, векторизуй и вычисляй векторно. Python loops в горячем пути оставляй только при подтверждённой необходимости.
 - Перед длинным запуском профилируй representative workload и сравнивай корректные реализации по wall-clock time, peak memory и, когда релевантно, throughput. Решение о backend, числе workers и batch size фиксируй в experiment record вместе с benchmark evidence.
 - Вычисления, для которых GPU даёт измеримый выигрыш с учётом transfer, compilation и warm-up overhead, выполняй на GPU через PyTorch и `torch.compile`. Всегда сохраняй eager fallback; отдельно проверяй численную эквивалентность, детерминизм и отсутствие recompilation в steady state.

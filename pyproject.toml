@@ -14,6 +14,11 @@ dependencies = [
 [project.scripts]
 ot-micromr = "ot_micromr.cli:main"
 
+[project.optional-dependencies]
+gpu = [
+    "torch>=2.13.0",
+]
+
 [build-system]
 requires = ["uv_build>=0.9.2,<0.10.0"]
 build-backend = "uv_build"

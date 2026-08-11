@@ -3,11 +3,10 @@
 Независимое воспроизведение результатов Amaral (2026), а затем причинная проверка
 торговой стратегии на event-level рыночных данных. Реализованы analytical baseline
 для Dawson optimum/Figure 3 и controlled synthetic jump simulator; empirical
-backtest относится к следующим этапам. Historical P3 gate не пройден, но
-его historical confirmatory gate не пройден. Последующий statistical audit показал,
-что rare-open flow/drift и почти весь refinement имеют status `inconclusive`, а старые
-point-estimate rules нельзя использовать для следующих experiments. P3V добавляет
-integrated hazards/compensators, sensitivity-informed margins и powered configs.
+backtest относится к следующим этапам. Historical P3 gate не прошёл, после чего P3V
+заменил эвристические пороги на integrated estimators, sensitivity-informed margins и
+powered equivalence/superiority tests. Оба P3V run и глобальная Holm family поддержаны;
+переход к независимому Figure 4 experiment разрешён.
 
 ## Environment
 
@@ -15,6 +14,12 @@ integrated hazards/compensators, sensitivity-informed margins и powered configs
 
 ```bash
 uv sync --locked
+```
+
+Для optional CUDA backend:
+
+```bash
+uv sync --locked --extra gpu
 ```
 
 ## Analytical reproduction
@@ -58,7 +63,7 @@ uv run ot-micromr run cfg/experiments/sim_unbalanced_001.toml
 Оба используют adaptive frozen-intensity approximation, а не exact sampler. Текущие
 run IDs и failed gates приведены в
 [`docs/reports/p3-controlled-simulation.md`](docs/reports/p3-controlled-simulation.md).
-До успешного powered validation переход к Figure 4 запрещён.
+Historical results сохранены как negative evidence и не определяют текущий P3V status.
 
 Новые stochastic runs следуют
 [`statistical-gates-v1`](docs/protocols/common/statistical-gates.md): equality claims
@@ -79,7 +84,13 @@ uv run ot-micromr run cfg/experiments/sim_unbalanced_002.toml
 Это длинные runs: `SIM-MOMENTS-002` имеет measured horizon `40000`, control —
 `20000`. После обоих запусков joint Holm decision рассчитывается
 `scripts/evaluate_p3v_family.py`; дополнительные seeds после просмотра результата не
-добавляются.
+добавляются. Канонические runs и adjusted p-values приведены в linked report; global
+status — `supported`.
+
+Для P4 выбран гибридный execution path: генерация adaptive event paths на 10 CPU
+processes, vectorised threshold/policy evaluation на CUDA через `torch.compile`. Решение
+основано на локальном transfer-inclusive benchmark; CPU reference остаётся обязательным
+regression oracle.
 
 Канонический статус и порядок работ: [`docs/plan.md`](docs/plan.md). Scientific
 protocol: [`docs/protocols/synthetic/paper-reproduction.md`](docs/protocols/synthetic/paper-reproduction.md).

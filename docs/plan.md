@@ -387,8 +387,8 @@ source TOML после запуска не переписывается под �
 | P2. Analytical executable baseline | Synthetic | **completed** | Closed forms, tests, smoke run и Figure 3 reproduction |
 | P3. Jump simulator и theorem checks | Synthetic | **completed; gate failed** | Invariants прошли; flow/control precision gates не прошли |
 | P3S. Statistical gate audit | Common | **completed** | Gates classified; TOST/superiority/multiplicity/power policy accepted |
-| P3V. Margin sensitivity и powered validation | Synthetic | **in progress** | SESOI bounded by downstream distortion; new independent confirmatory runs |
-| P4. Figures 2/4/5 и paper report | Synthetic | **blocked by P3V** | Claim matrix с reproduced/not-reproduced/underdetermined |
+| P3V. Margin sensitivity и powered validation | Synthetic | **completed; supported** | SESOI bounded by downstream distortion; new independent confirmatory runs passed |
+| P4. Figures 2/4/5 и paper report | Synthetic | **in progress** | Claim matrix с reproduced/not-reproduced/underdetermined |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
 | P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
@@ -571,7 +571,7 @@ Reference implementation находится в `ot_micromr.statistical_gates`; p
 [`statistical-gates-v1`](protocols/common/statistical-gates.md). Никакие новые
 confirmatory outputs в P3S не создавались.
 
-### P3V. Margin sensitivity и powered validation — in progress
+### P3V. Margin sensitivity и powered validation — completed
 
 До регистрации `SIM-*002` требуется:
 
@@ -590,8 +590,8 @@ confirmatory outputs в P3S не создавались.
 estimators/compute — в
 [`ADR-0006`](adr/0006-p3v-estimators-power-and-compute.md). Зафиксированы новые IDs
 `SIM-MOMENTS-002` и `SIM-UNBALANCED-002`, 20 независимых новых seeds, measured horizon
-`20000`, resolutions `{0.01, 0.005}`, отсутствие optional stopping и совместный Holm gate
-для flow equivalence, open-drift equivalence и unbalanced superiority. Следующие действия:
+`20000`, resolutions `{0.01, 0.005}`, отсутствие optional stopping и раздельные Holm
+families для primary и refinement claims. План работ был следующим:
 
 1. реализовать integrated hazards/compensators и process-parallel runner;
 2. benchmark `1/4/10/20` CPU workers на pilot workload и проверить bitwise equality;
@@ -609,8 +609,29 @@ jump-compensator negative control. Power design теперь задаёт horizo
 Holm families. Factual pilot report:
 [`p3v-sensitivity-and-power.md`](reports/p3v-sensitivity-and-power.md).
 
-Оба target config ещё **не запускались**. Перед запуском implementation/protocol/config
-должны быть закоммичены, потому что claim-eligible runner требует clean tree.
+Оба target run выполнены 2026-08-11 из clean commit
+`9dedb6b44d87933147420a316e445b19cf4c5080` без optional extension:
+
+- `SIM-MOMENTS-002/20260811T184531842286Z-4cb501542645-det`, `1189.46 s`;
+- `SIM-UNBALANCED-002/20260811T190621510298Z-f3c0ff8a3b29-det`, `583.86 s`.
+
+Primary Holm family поддержана: flow equivalence estimate `0.01567`, margin `0.05`,
+adjusted $p=0.00629$; planted unbalanced contrast estimate `0.23015` против minimum
+effect `0.10`, adjusted $p=0.00297$. Refinement family также поддержана: adjusted
+$p=0.01508$ для обеих equivalence checks. Все deterministic/operational gates прошли.
+Global artifact: `outputs/p3v/global-gate.json`; подробности и limitations находятся в
+[`p3v-sensitivity-and-power.md`](reports/p3v-sensitivity-and-power.md). Gate P3V имеет
+status **supported**, переход к P4 разрешён.
+
+До реализации P4 выполнен backend benchmark на representative endpoint band kernel
+(20 paths × 50000 observations × 21 thresholds). Compiled CUDA с включённым transfer
+получил `123.2x` speedup в `float64` относительно vectorized NumPy при максимальной
+ошибке rate `2.9e-13`; поэтому policy/threshold post-processing P4 использует optional
+PyTorch CUDA backend и `torch.compile`. CPU event-path generator сохраняет измеренный
+10-process backend, пока отдельная реализация не докажет end-to-end выигрыш без изменения
+scientific semantics.
+
+Backend decision: [`ADR-0007`](adr/0007-p4-hybrid-cpu-cuda-backend.md).
 
 ### P4. Independent paper-result reconstruction
 
@@ -639,6 +660,10 @@ rate loss at $\theta_D$, 5--6% at $\theta^*$) сравниваются с confid
 rate/loss estimates публикуются с seed-cluster intervals. Numerical refinement проходит
 только equivalence test. Minimum 100 intervals остаётся operational floor и не заменяет
 power analysis.
+
+Непосредственный следующий шаг: реализовать continuous-crossing policy monitor,
+preregister `SIM-FIG4-002` и до target inspection benchmark-ом выбрать CPU/GPU execution
+для полного, а не endpoint-only, kernel.
 
 ### P5. Data feasibility, licensing и frozen universe
 
