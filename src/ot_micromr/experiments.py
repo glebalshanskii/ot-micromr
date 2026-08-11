@@ -399,6 +399,15 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
         figure_name = (
             "sim-moments.png" if spec.experiment_id.startswith("SIM-MOMENTS-") else "sim-unbalanced.png"
         )
+        paths_by_class.update(
+            {
+                "metrics_raw": [run_directory / "metrics" / "seed_metrics.csv"],
+                "table": [run_directory / "tables" / "resolution_summary.csv"],
+                "figure_data": [run_directory / "figures" / "simulation-data.csv"],
+                "figure": [run_directory / "figures" / figure_name],
+                "event_log": [run_directory / "records" / "book_events.csv"],
+            }
+        )
     if spec.experiment_id.startswith("SIM-FIG4-"):
         paths_by_class.update(
             {
@@ -414,15 +423,6 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                 "figure": [run_directory / "figures" / "figure4.png"],
                 "calibration_table": [run_directory / "tables" / "calibration.csv"],
                 "fill_log": [run_directory / "records" / "fills.csv"],
-            }
-        )
-        paths_by_class.update(
-            {
-                "metrics_raw": [run_directory / "metrics" / "seed_metrics.csv"],
-                "table": [run_directory / "tables" / "resolution_summary.csv"],
-                "figure_data": [run_directory / "figures" / "simulation-data.csv"],
-                "figure": [run_directory / "figures" / figure_name],
-                "event_log": [run_directory / "records" / "book_events.csv"],
             }
         )
     result: dict[str, bool] = {}

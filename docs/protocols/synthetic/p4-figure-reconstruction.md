@@ -41,7 +41,7 @@ target `{0.28,0.36,0.47}` is selected by absolute gamma distance, with lower row
 
 ## 3. Pilot and target separation
 
-`SIM-FIG4-PILOT-001` is non-claim evidence. It uses historical labels `20260811xx`, six
+`SIM-FIG4-PILOT-002` is non-claim evidence. It uses historical labels `20260811xx`, six
 strategy seeds, horizon 300 reversion times, epsilons `{0.01,0.005}`, threshold multipliers
 `0.50:0.10:1.60` and 1000 bootstrap replications. It may establish:
 
@@ -54,6 +54,15 @@ strategy seeds, horizon 300 reversion times, epsilons `{0.01,0.005}`, threshold 
 It may not establish a paper claim. After pilot, a dated amendment freezes the target's new
 seeds, horizon, threshold grid, epsilon pair, sample size, bootstrap count and maximum compute.
 Target data are never used for optional extension.
+
+### Infrastructure amendment, 2026-08-11
+
+`SIM-FIG4-PILOT-001` stopped before simulation because floating-point roundoff could place
+the final calibration schedule point infinitesimally beyond the nominal horizon. Its failed
+run remains immutable. Regression tests now require the terminal post-state observation and
+independent Figure 4 artifact routing. `SIM-FIG4-PILOT-002` is the replacement; it preserves
+all scientific settings and seeds, changes only the experiment ID and repaired infrastructure,
+and remains non-claim evidence.
 
 ## 4. Strategy and rate
 

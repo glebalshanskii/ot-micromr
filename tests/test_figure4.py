@@ -41,6 +41,19 @@ class Figure4SimulationTests(unittest.TestCase):
             self.assertLessEqual(policy["wealth_marking_identity_abs_residual"], 1e-10)
             self.assertGreaterEqual(policy["fill_count"], 1)
 
+    def test_calibration_retains_final_observation_under_roundoff(self) -> None:
+        values = self._tiny_values()
+        values["model"]["response_scale_alpha_per_second_grid"] = [0.2]
+        values["simulation"]["calibration_burn_in_reversion_times"] = 1.0
+        values["simulation"]["calibration_sampling_reversion_times"] = 2.0
+        values["simulation"]["calibration_observation_interval_reversion_times"] = 0.02
+        rows = calibrate_rows(values)
+        expected_per_seed = 101
+        self.assertEqual(
+            rows[0].observation_count,
+            expected_per_seed * len(values["seed_policy"]["calibration_seeds"]),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -38,7 +38,7 @@ ANALYTICAL_EXPERIMENTS = {"ANA-SMOKE-001", "ANA-FIG3-001"}
 BALANCED_SIMULATION_EXPERIMENTS = {"SIM-MOMENTS-001", "SIM-MOMENTS-002"}
 UNBALANCED_SIMULATION_EXPERIMENTS = {"SIM-UNBALANCED-001", "SIM-UNBALANCED-002"}
 SIMULATION_EXPERIMENTS = BALANCED_SIMULATION_EXPERIMENTS | UNBALANCED_SIMULATION_EXPERIMENTS
-FIGURE4_EXPERIMENTS = {"SIM-FIG4-PILOT-001", "SIM-FIG4-002"}
+FIGURE4_EXPERIMENTS = {"SIM-FIG4-PILOT-001", "SIM-FIG4-PILOT-002", "SIM-FIG4-002"}
 SUPPORTED_EXPERIMENTS = ANALYTICAL_EXPERIMENTS | SIMULATION_EXPERIMENTS | FIGURE4_EXPERIMENTS
 
 
@@ -1060,7 +1060,7 @@ def _validate_positive_unique_seed_array(
 
 
 def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
-    pilot = experiment_id == "SIM-FIG4-PILOT-001"
+    pilot = experiment_id.startswith("SIM-FIG4-PILOT-")
     if _boolean(data, "claim_eligible", "RunSpec") != (not pilot):
         raise ConfigError(f"RunSpec.claim_eligible: expected {not pilot}")
 

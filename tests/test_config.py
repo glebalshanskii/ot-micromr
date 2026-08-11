@@ -85,8 +85,10 @@ class RunSpecTests(unittest.TestCase):
             validate_runspec(data)
 
     def test_figure4_pilot_contract_validates(self) -> None:
-        data = load_data("sim_fig4_pilot_001.toml")
-        validate_runspec(data)
+        for name in ("sim_fig4_pilot_001.toml", "sim_fig4_pilot_002.toml"):
+            with self.subTest(name=name):
+                validate_runspec(load_data(name))
+        data = load_data("sim_fig4_pilot_002.toml")
         data["simulation"]["implicit_dt"] = 0.1
         with self.assertRaisesRegex(ConfigError, "unknown fields"):
             validate_runspec(data)

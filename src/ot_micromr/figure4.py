@@ -165,7 +165,7 @@ def _simulate_calibration_coordinate(
             tight[observation_index] = state.is_tight
             observation_index += 1
             next_observation = (
-                burn + observation_index * interval
+                min(burn + observation_index * interval, total_end)
                 if observation_index <= interval_count
                 else total_end
             )
