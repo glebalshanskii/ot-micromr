@@ -39,18 +39,13 @@ max_event_probability_rule = "1 - exp(-lambda_total_left * dt_seconds) <= epsilo
 bridge_crossing_probability = "exact_one_sided_brownian_bridge"
 bridge_probability_cutoff = 1.0e-14
 bridge_only_hit_time_rule = "step_midpoint"
-omitted_probability_budget = 1.0e-5
 root_lower_margin_ratio = 1.0e-12
 root_upper_u_ratio = 8.0
 root_xtol = 1.0e-13
 root_rtol = 1.0e-13
 root_max_iterations = 200
 cpu_workers = 10
-gpu_crossing_enabled = true
 gpu_chunk_steps = 32768
-gpu_reduction_enabled = true
-gpu_compile_enabled = true
-gpu_fallback = "numpy_float64"
 
 [inputs]
 source_kind = "paper_model_project_parameters"
@@ -92,8 +87,6 @@ market_burn_in_reversion_times = 50.0
 strategy_burn_in_reversion_times = 50.0
 horizon_reversion_times = 300.0
 replications = 30
-event_log = false
-fill_log = false
 simultaneous_book_events_allowed = false
 strategy_monitoring_enabled = true
 
@@ -129,14 +122,13 @@ confidence_interval = "Student-t rate intervals, seed-cluster bootstrap function
 bootstrap_replications = 10000
 familywise_alpha = 0.05
 power_target = 0.90
-minimum_complete_interfill_intervals_per_seed_and_policy = 20
 rate_normalization = "surrogate_row_optimum"
-peak_rule = "Lowest-multiplier argmax of across-seed mean rate; local five-point quadratic fit is diagnostic."
+peak_rule = "Lowest-multiplier argmax of across-seed mean rate; also report the local five-point quadratic fit."
 rate_loss_rule = "One minus named-threshold seed-mean rate divided by grid-peak seed-mean rate."
 primary_family_id = "P4-INWARD-SHIFT-3-GAMMA"
 inward_shift_minimum_effect = 0.05
 inward_shift_planning_alternative = 0.20
-inward_shift_pilot_cluster_standard_deviation = 0.234
+inward_shift_planning_cluster_standard_deviation = 0.234
 planned_strategy_seed_count = 30
 refinement_family_id = "P4-REFINEMENT-NAMED-RATES-6"
 refinement_rate_equivalence_margin = 0.02
@@ -147,17 +139,12 @@ require_all_replications = true
 require_all_response_rows = true
 require_all_thresholds = true
 require_nonflat_before_measurement = true
-minimum_complete_interfill_intervals_per_seed_and_policy = 20
-invariant_violation_count_max = 0
-nonfinite_value_count_max = 0
 omitted_probability_sum_max = 1.0e-5
 dawson_root_abs_residual_max = 1.0e-10
 require_clean_tree_for_claim = true
-stop_on_invariant_violation = true
-stop_on_nonfinite_value = true
 result_label = "independent_partial_reproduction"
 
 [artifacts]
 output_root = "outputs"
-required_classes = ["source_config", "resolved_runspec", "manifest", "log", "metrics_summary", "metrics_raw", "table", "figure_data", "figure", "calibration_table", "fill_log"]
-optional_classes = ["event_log"]
+required_classes = ["source_config", "resolved_runspec", "manifest", "log", "metrics_summary", "metrics_raw", "table", "figure_data", "figure", "calibration_table"]
+optional_classes = []

@@ -71,27 +71,11 @@ class RunSpecTests(unittest.TestCase):
 
     def test_p3_simulation_contracts_validate(self) -> None:
         for name in (
-            "sim_moments_001.toml",
-            "sim_unbalanced_001.toml",
             "sim_moments_002.toml",
             "sim_unbalanced_002.toml",
         ):
             with self.subTest(name=name):
                 validate_runspec(load_data(name))
-
-    def test_figure4_contract_is_deferred_to_p4(self) -> None:
-        data = load_data("sim_fig4_001.toml")
-        with self.assertRaisesRegex(ConfigError, "executable validator supports only"):
-            validate_runspec(data)
-
-    def test_figure4_pilot_contract_validates(self) -> None:
-        for name in ("sim_fig4_pilot_001.toml", "sim_fig4_pilot_002.toml"):
-            with self.subTest(name=name):
-                validate_runspec(load_data(name))
-        data = load_data("sim_fig4_pilot_002.toml")
-        data["simulation"]["implicit_dt"] = 0.1
-        with self.assertRaisesRegex(ConfigError, "unknown fields"):
-            validate_runspec(data)
 
     def test_figure4_target_contract_validates(self) -> None:
         data = load_data("sim_fig4_002.toml")
@@ -101,7 +85,7 @@ class RunSpecTests(unittest.TestCase):
             validate_runspec(data)
 
     def test_unknown_simulation_field_is_rejected(self) -> None:
-        data = load_data("sim_moments_001.toml")
+        data = load_data("sim_moments_002.toml")
         data["simulation"]["implicit_dt"] = 0.1
         with self.assertRaisesRegex(ConfigError, "unknown fields"):
             validate_runspec(data)

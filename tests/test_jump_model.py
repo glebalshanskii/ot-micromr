@@ -15,8 +15,8 @@ from ot_micromr.jump_model import (
 class JumpModelTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.balanced_spec = load_runspec("cfg/experiments/sim_moments_001.toml")
-        cls.unbalanced_spec = load_runspec("cfg/experiments/sim_unbalanced_001.toml")
+        cls.balanced_spec = load_runspec("cfg/experiments/sim_moments_002.toml")
+        cls.unbalanced_spec = load_runspec("cfg/experiments/sim_unbalanced_002.toml")
         cls.parameters = BookParameters.from_model(cls.balanced_spec.values["model"])
 
     def test_initial_state_derivations(self) -> None:

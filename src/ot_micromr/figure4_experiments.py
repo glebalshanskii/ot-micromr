@@ -16,8 +16,6 @@ from ot_micromr.figure4 import (
     CalibrationRow,
     Figure4Replication,
     calibrate_rows,
-    replay_figure4_coordinate,
-    simulate_figure4,
 )
 from ot_micromr.figure4_cuda import evaluate_market_traces_cuda
 from ot_micromr.figure4_market import simulate_market_trace, simulate_market_traces
@@ -55,21 +53,12 @@ def _curve_rows(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     by_row = {item.row_index: item for item in calibrations}
-    keys = sorted(
-        {
-            (result.epsilon, result.row_index, int(policy["policy_index"]))
-            for result in results
-            for policy in result.policy_rows
-        }
-    )
-    for epsilon, row_index, policy_index in keys:
-        policies = [
-            policy
-            for result in results
-            if result.epsilon == epsilon and result.row_index == row_index
-            for policy in result.policy_rows
-            if int(policy["policy_index"]) == policy_index
-        ]
+    grouped: dict[tuple[float, int, int], list[Mapping[str, Any]]] = {}
+    for result in results:
+        for policy in result.policy_rows:
+            key = (result.epsilon, result.row_index, int(policy["policy_index"]))
+            grouped.setdefault(key, []).append(policy)
+    for (epsilon, row_index, policy_index), policies in sorted(grouped.items()):
         calibration = by_row[row_index]
         mean, se, lower, upper = _mean_se_interval(
             [float(policy["renewal_rate_over_surrogate_optimum"]) for policy in policies]
@@ -107,9 +96,6 @@ def _curve_rows(
                 "surrogate_rate_over_surrogate_optimum": surrogate,
                 "mean_overshoot_price": float(np.mean(overshoots)) if overshoots else None,
                 "mean_open_fill_share": float(np.mean(open_shares)) if open_shares else None,
-                "minimum_complete_interval_count": min(
-                    int(policy["complete_interval_count"]) for policy in policies
-                ),
             }
         )
     return rows
@@ -123,18 +109,21 @@ def _rate_tensor(
     rows = sorted({result.row_index for result in selected})
     policy_count = len(selected[0].policy_rows)
     tensor = np.empty((len(seeds), len(rows), policy_count), dtype=np.float64)
-    multipliers = np.empty(policy_count, dtype=np.float64)
+    multipliers = np.asarray(
+        [
+            float(policy["threshold_multiplier_theta_d"])
+            for policy in selected[0].policy_rows
+        ],
+        dtype=np.float64,
+    )
+    by_coordinate = {(result.seed, result.row_index): result for result in selected}
+    if len(by_coordinate) != len(selected):
+        raise RuntimeError("duplicate Figure 4 seed/response-row coordinate")
     for seed_index, seed in enumerate(seeds):
         for row_offset, row_index in enumerate(rows):
-            result = next(
-                item for item in selected if item.seed == seed and item.row_index == row_index
-            )
+            result = by_coordinate[(seed, row_index)]
             tensor[seed_index, row_offset] = [
                 float(policy["renewal_rate_over_surrogate_optimum"])
-                for policy in result.policy_rows
-            ]
-            multipliers[:] = [
-                float(policy["threshold_multiplier_theta_d"])
                 for policy in result.policy_rows
             ]
     return tensor, seeds, rows, multipliers
@@ -158,7 +147,7 @@ def _functional_reduction_numpy(
 
 def _bootstrap_functionals(
     values: Mapping[str, Any], rates: np.ndarray, multipliers: np.ndarray
-) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+) -> dict[str, np.ndarray]:
     grid_multipliers = multipliers[:-1]
     theta_d_locations = np.flatnonzero(np.isclose(grid_multipliers, 1.0, atol=1e-12))
     if theta_d_locations.size != 1:
@@ -170,89 +159,21 @@ def _bootstrap_functionals(
         np.random.PCG64DXSM(np.random.SeedSequence(int(values["seed_policy"]["bootstrap_seed"])))
     )
     indices = rng.integers(0, seed_count, size=(replications, seed_count), dtype=np.int64)
-    started = time.perf_counter()
-    cpu = _functional_reduction_numpy(rates, indices, grid_multipliers, theta_d_index)
-    cpu_seconds = time.perf_counter() - started
-    backend: dict[str, Any] = {
-        "selected": "numpy_float64",
-        "cpu_float64_seconds": cpu_seconds,
-        "gpu_available": False,
-    }
-    output = cpu
-    if bool(values["numerics"]["gpu_reduction_enabled"]):
-        try:
-            import torch
-        except ImportError:
-            backend["fallback_reason"] = "torch_not_installed"
-        else:
-            backend["gpu_available"] = torch.cuda.is_available()
-            backend["torch_version"] = torch.__version__
-            if torch.cuda.is_available():
-                device_rates = torch.as_tensor(rates, dtype=torch.float32, device="cuda")
-                device_indices = torch.as_tensor(indices, dtype=torch.int64, device="cuda")
-                device_grid = torch.as_tensor(grid_multipliers, dtype=torch.float32, device="cuda")
-
-                def reduction(local_rates: Any, local_indices: Any, local_grid: Any) -> tuple[Any, ...]:
-                    means = local_rates[local_indices].mean(dim=1)
-                    grid_means = means[:, :, : local_grid.numel()]
-                    peak_indices = torch.argmax(grid_means, dim=2)
-                    peak_rates = torch.gather(grid_means, 2, peak_indices.unsqueeze(-1)).squeeze(-1)
-                    shifts = 1.0 - local_grid[peak_indices]
-                    losses_d = 1.0 - grid_means[:, :, theta_d_index] / peak_rates
-                    losses_star = 1.0 - means[:, :, -1] / peak_rates
-                    return shifts, losses_d, losses_star
-
-                compiled = (
-                    torch.compile(reduction, fullgraph=True)
-                    if bool(values["numerics"]["gpu_compile_enabled"])
-                    else reduction
-                )
-                torch.cuda.synchronize()
-                cold_started = time.perf_counter()
-                cold = compiled(device_rates, device_indices, device_grid)
-                torch.cuda.synchronize()
-                cold_seconds = time.perf_counter() - cold_started
-                steady_started = time.perf_counter()
-                candidate = compiled(device_rates, device_indices, device_grid)
-                torch.cuda.synchronize()
-                steady_seconds = time.perf_counter() - steady_started
-                gpu = tuple(item.detach().cpu().numpy().astype(np.float64) for item in candidate)
-                shift_exact = bool(np.array_equal(cpu[0], gpu[0]))
-                maximum_error = max(
-                    float(np.max(np.abs(reference - candidate_value)))
-                    for reference, candidate_value in zip(cpu, gpu, strict=True)
-                )
-                backend.update(
-                    {
-                        "gpu_device": torch.cuda.get_device_name(0),
-                        "gpu_float32_cold_seconds": cold_seconds,
-                        "gpu_float32_steady_seconds": steady_seconds,
-                        "gpu_speedup_vs_cpu": cpu_seconds / steady_seconds,
-                        "peak_shift_exact": shift_exact,
-                        "functional_max_abs_error": maximum_error,
-                    }
-                )
-                if steady_seconds < cpu_seconds and shift_exact and maximum_error <= 1e-5:
-                    output = gpu
-                    backend["selected"] = "torch_compile_cuda_float32"
-                else:
-                    backend["fallback_reason"] = "no_validated_end_to_end_advantage"
+    output = _functional_reduction_numpy(rates, indices, grid_multipliers, theta_d_index)
     return {
         "inward_shift": output[0],
         "loss_at_theta_d": output[1],
         "loss_at_theta_star": output[2],
-    }, backend
+    }
 
 
 def _functionals(
     values: Mapping[str, Any], results: Sequence[Figure4Replication]
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    backend_records: dict[str, Any] = {}
     for epsilon in sorted({result.epsilon for result in results}, reverse=True):
         tensor, _, row_indices, multipliers = _rate_tensor(results, epsilon)
-        bootstrap, backend = _bootstrap_functionals(values, tensor, multipliers)
-        backend_records[f"epsilon_{epsilon:g}"] = backend
+        bootstrap = _bootstrap_functionals(values, tensor, multipliers)
         point_mean = np.mean(tensor, axis=0)
         grid = multipliers[:-1]
         peak_indices = np.argmax(point_mean[:, :-1], axis=1)
@@ -294,25 +215,21 @@ def _functionals(
                     "bootstrap_loss_theta_star_95_upper": float(
                         np.quantile(losses_star, 0.975)
                     ),
-                    "bootstrap_inward_shift_minimum_effect_p_value": (
-                        float(
-                            (
-                                1
-                                + np.count_nonzero(
-                                    shifts
-                                    - (1.0 - grid[peak_index])
-                                    >= (1.0 - grid[peak_index])
-                                    - float(values["evaluation"]["inward_shift_minimum_effect"])
-                                )
+                    "bootstrap_inward_shift_minimum_effect_p_value": float(
+                        (
+                            1
+                            + np.count_nonzero(
+                                shifts
+                                - (1.0 - grid[peak_index])
+                                >= (1.0 - grid[peak_index])
+                                - float(values["evaluation"]["inward_shift_minimum_effect"])
                             )
-                            / (shifts.size + 1)
                         )
-                        if "inward_shift_minimum_effect" in values["evaluation"]
-                        else None
+                        / (shifts.size + 1)
                     ),
                 }
             )
-    return rows, backend_records
+    return rows
 
 
 def _scientific_gates(
@@ -322,11 +239,11 @@ def _scientific_gates(
     selections: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     evaluation = values["evaluation"]
-    if "inward_shift_minimum_effect" not in evaluation:
-        return {"status": "pilot_not_claim_eligible"}
     alpha = float(evaluation["familywise_alpha"])
     primary_epsilon = float(values["numerics"]["primary_resolution_epsilon"])
     selected_indices = list(dict.fromkeys(int(item["row_index"]) for item in selections))
+    if len(selected_indices) != len(selections):
+        raise RuntimeError("target gamma values must select distinct calibrated response rows")
     primary_rows = [
         row
         for row in functional_rows
@@ -495,10 +412,7 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
 
     evaluation_started = time.perf_counter()
     values = spec.to_dict()
-    wall_budget = values["evaluation"].get("maximum_target_wall_seconds")
-    deadline = (
-        evaluation_started + float(wall_budget) if wall_budget is not None else None
-    )
+    deadline = evaluation_started + float(values["evaluation"]["maximum_target_wall_seconds"])
     calibrations = calibrate_rows(values)
     calibration_rows = [asdict(row) for row in calibrations]
     write_csv(
@@ -514,58 +428,38 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         for row in calibrations
         for seed in seeds
     ]
-    use_cuda = False
-    if bool(
-        values["numerics"].get(
-            "gpu_crossing_enabled", values["numerics"]["gpu_reduction_enabled"]
-        )
-    ):
-        try:
-            import torch
-        except ImportError:
-            pass
-        else:
-            use_cuda = bool(torch.cuda.is_available())
-    if bool(values["numerics"].get("gpu_crossing_enabled", False)) and not use_cuda:
-        raise RuntimeError("claim-eligible Figure 4 target requires the frozen CUDA backend")
-    market_traces = ()
-    continuous_backend: dict[str, Any]
-    if use_cuda:
-        market_started = time.perf_counter()
-        market_traces = simulate_market_traces(
-            values,
-            calibrations,
-            coordinates,
-            int(values["numerics"]["cpu_workers"]),
-        )
-        market_seconds = time.perf_counter() - market_started
-        cuda_started = time.perf_counter()
-        cuda_evaluation = evaluate_market_traces_cuda(
-            values,
-            calibrations,
-            market_traces,
-            chunk_steps=int(values["numerics"].get("gpu_chunk_steps", 32768)),
-            deadline_monotonic=deadline,
-        )
-        cuda_seconds = time.perf_counter() - cuda_started
-        results = cuda_evaluation.replications
-        continuous_backend = {
-            "selected": "cpu_adaptive_market_plus_torch_compile_cuda_float32_crossings",
-            "market_generation_seconds": market_seconds,
-            "cuda_crossing_evaluation_seconds": cuda_seconds,
-            "groups": cuda_evaluation.benchmark,
-        }
-    else:
-        cpu_started = time.perf_counter()
-        results = simulate_figure4(
-            values, calibrations, coordinates, int(values["numerics"]["cpu_workers"])
-        )
-        continuous_backend = {
-            "selected": "numpy_float64_continuous_crossing",
-            "end_to_end_seconds": time.perf_counter() - cpu_started,
-        }
+    try:
+        import torch
+    except ImportError as error:
+        raise RuntimeError("Figure 4 requires the PyTorch CUDA extra") from error
+    if not torch.cuda.is_available():
+        raise RuntimeError("Figure 4 requires a CUDA device")
+    market_started = time.perf_counter()
+    market_traces = simulate_market_traces(
+        values,
+        calibrations,
+        coordinates,
+        int(values["numerics"]["cpu_workers"]),
+    )
+    market_seconds = time.perf_counter() - market_started
+    cuda_started = time.perf_counter()
+    cuda_evaluation = evaluate_market_traces_cuda(
+        values,
+        calibrations,
+        market_traces,
+        chunk_steps=int(values["numerics"]["gpu_chunk_steps"]),
+        deadline_monotonic=deadline,
+    )
+    cuda_seconds = time.perf_counter() - cuda_started
+    results = cuda_evaluation.replications
+    backend = {
+        "selected": "cpu_adaptive_market_plus_torch_compile_cuda_float32_crossings",
+        "market_generation_seconds": market_seconds,
+        "cuda_crossing_evaluation_seconds": cuda_seconds,
+        "groups": cuda_evaluation.benchmark,
+    }
     policy_rows = [dict(policy) for result in results for policy in result.policy_rows]
-    diagnostic_rows = [
+    replication_rows = [
         {
             "row_index": result.row_index,
             "alpha_per_second": result.alpha_per_second,
@@ -577,11 +471,7 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         for result in results
     ]
     curve_rows = _curve_rows(results, calibrations)
-    functional_rows, reduction_backend = _functionals(values, results)
-    backend = {
-        "continuous_crossing": continuous_backend,
-        "functional_reduction": reduction_backend,
-    }
+    functional_rows = _functionals(values, results)
     selections = _selected_rows(
         calibrations, values["evaluation"]["target_realized_gamma_ratios"]
     )
@@ -589,57 +479,36 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         values, results, functional_rows, selections
     )
     illustration_row = int(selections[0]["row_index"])
-    if market_traces:
-        illustration_trace = next(
-            trace
-            for trace in market_traces
-            if trace.row_index == illustration_row
-            and trace.epsilon == float(values["numerics"]["primary_resolution_epsilon"])
-            and trace.seed == seeds[0]
-        )
-    else:
-        illustration_trace = simulate_market_trace(
-            values,
-            next(row for row in calibrations if row.row_index == illustration_row),
-            float(values["numerics"]["primary_resolution_epsilon"]),
-            seeds[0],
-        )
+    illustration_trace = next(
+        trace
+        for trace in market_traces
+        if trace.row_index == illustration_row
+        and trace.epsilon == float(values["numerics"]["primary_resolution_epsilon"])
+        and trace.seed == seeds[0]
+    )
     render_paper_illustrations(
         values,
         next(row for row in calibrations if row.row_index == illustration_row),
         illustration_trace,
         run_directory,
     )
-    if deadline is not None and time.perf_counter() >= deadline:
+    if time.perf_counter() >= deadline:
         raise TimeoutError("SIM-FIG4-002 exceeded its preregistered wall-clock budget")
     replay_mismatches = 0
     for replay_seed in values["seed_policy"]["deterministic_replay_seeds"]:
-        if use_cuda:
-            original_trace = next(
-                item
-                for item in market_traces
-                if item.row_index == 0
-                and item.epsilon == epsilons[0]
-                and item.seed == replay_seed
-            )
-            replay_trace = simulate_market_trace(
-                values, calibrations[0], epsilons[0], replay_seed
-            )
-            replay_mismatches += int(
-                original_trace.replay_digest != replay_trace.replay_digest
-            )
-        else:
-            original = next(
-                item
-                for item in results
-                if item.row_index == 0
-                and item.epsilon == epsilons[0]
-                and item.seed == replay_seed
-            )
-            replay = replay_figure4_coordinate(
-                values, calibrations[0], epsilons[0], replay_seed
-            )
-            replay_mismatches += int(original.replay_digest != replay.replay_digest)
+        original_trace = next(
+            item
+            for item in market_traces
+            if item.row_index == 0
+            and item.epsilon == epsilons[0]
+            and item.seed == replay_seed
+        )
+        replay_trace = simulate_market_trace(
+            values, calibrations[0], epsilons[0], replay_seed
+        )
+        replay_mismatches += int(
+            original_trace.replay_digest != replay_trace.replay_digest
+        )
 
     write_csv(
         run_directory / "metrics" / "seed_threshold_metrics.csv",
@@ -647,9 +516,9 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         policy_rows,
     )
     write_csv(
-        run_directory / "metrics" / "path_diagnostics.csv",
-        sorted({key for row in diagnostic_rows for key in row}),
-        diagnostic_rows,
+        run_directory / "metrics" / "replication_metrics.csv",
+        sorted({key for row in replication_rows for key in row}),
+        replication_rows,
     )
     write_csv(
         run_directory / "tables" / "curve_summary.csv",
@@ -666,11 +535,6 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         list(curve_rows[0].keys()),
         curve_rows,
     )
-    write_csv(
-        run_directory / "records" / "fills.csv",
-        ["row_index", "epsilon", "seed", "policy_index", "time_seconds", "side", "gap", "spread"],
-        [],
-    )
     primary_epsilon = float(values["numerics"]["primary_resolution_epsilon"])
     _render_figure4(
         run_directory / "figures" / "figure4.png",
@@ -683,35 +547,54 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
 
     acceptance_spec = values["acceptance"]
     expected_result_count = len(epsilons) * len(calibrations) * len(seeds)
-    expected_policy_rows = expected_result_count * len(results[0].policy_rows)
-    minimum_intervals = int(
-        acceptance_spec["minimum_complete_interfill_intervals_per_seed_and_policy"]
+    expected_coordinates = set(coordinates)
+    actual_coordinates = {
+        (result.row_index, result.epsilon, result.seed) for result in results
+    }
+    expected_row_indices = {row.row_index for row in calibrations}
+    expected_policy_indices = set(
+        range(
+            len(values["strategy"]["threshold_multiplier_theta_over_theta_d_grid"])
+            + len(values["strategy"]["additional_thresholds"])
+        )
     )
     max_omitted = max(
         float(row["omitted_bridge_probability_sum"])
         + float(row["full_band_recrossing_probability_bound"])
-        for row in diagnostic_rows
+        for row in replication_rows
     )
     max_identity = max(float(row["wealth_marking_identity_abs_residual"]) for row in policy_rows)
     acceptance = {
-        "all_replications": len(results) == expected_result_count,
-        "all_response_rows": len({item.row_index for item in results}) == len(calibrations),
-        "all_thresholds": len(policy_rows) == expected_policy_rows,
+        "all_replications": len(results) == expected_result_count
+        and actual_coordinates == expected_coordinates,
+        "all_response_rows": {item.row_index for item in results} == expected_row_indices,
+        "all_thresholds": all(
+            len(result.policy_rows) == len(expected_policy_indices)
+            and {int(row["policy_index"]) for row in result.policy_rows}
+            == expected_policy_indices
+            for result in results
+        ),
         "nonflat_before_measurement": all(
-            int(row["invariant_violation_count"]) == 0 for row in diagnostic_rows
+            int(row["nonflat_policy_count_at_measurement_start"])
+            == int(row["policy_count"])
+            for row in replication_rows
         ),
-        "minimum_complete_intervals": all(
-            int(row["complete_interval_count"]) >= minimum_intervals for row in policy_rows
+        "defined_rate_estimators": all(
+            int(row["complete_interval_count"]) >= 1
+            and row["mean_interfill_seconds"] is not None
+            and math.isfinite(float(row["mean_interfill_seconds"]))
+            for row in policy_rows
         ),
-        "invariant_violation_count": all(
-            int(row["invariant_violation_count"])
-            <= int(acceptance_spec["invariant_violation_count_max"])
-            for row in diagnostic_rows
-        ),
-        "nonfinite_value_count": all(
-            int(row["nonfinite_value_count"])
-            <= int(acceptance_spec["nonfinite_value_count_max"])
-            for row in diagnostic_rows
+        "finite_policy_values": all(
+            math.isfinite(float(row[key]))
+            for row in policy_rows
+            for key in (
+                "renewal_rate_per_second",
+                "renewal_rate_over_alpha_s_g",
+                "renewal_rate_over_surrogate_optimum",
+                "threshold_price",
+                "wealth_marking_identity_abs_residual",
+            )
         ),
         "omitted_probability_budget": max_omitted
         <= float(acceptance_spec["omitted_probability_sum_max"]),
@@ -733,12 +616,6 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         "backend": backend,
         "maximum_omitted_probability_bound": max_omitted,
         "maximum_wealth_marking_identity_abs_residual": max_identity,
-        "minimum_complete_interval_count": min(
-            int(row["complete_interval_count"]) for row in policy_rows
-        ),
-        "fraction_cells_with_at_least_100_intervals": float(
-            np.mean([int(row["complete_interval_count"]) >= 100 for row in policy_rows])
-        ),
         "deterministic_replay_mismatch_count": replay_mismatches,
         "result_count": len(results),
         "seed_threshold_row_count": len(policy_rows),
@@ -759,7 +636,6 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
             f"calibrated_rows={len(calibrations)}",
             f"strategy_results={len(results)}",
             f"seed_threshold_rows={len(policy_rows)}",
-            f"minimum_complete_intervals={metrics['minimum_complete_interval_count']}",
             f"maximum_omitted_probability_bound={max_omitted:.3e}",
             f"deterministic_replay_mismatches={replay_mismatches}",
             f"acceptance_passed={all(acceptance.values())}",

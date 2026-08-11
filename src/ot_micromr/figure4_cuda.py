@@ -63,7 +63,7 @@ def _bridge_seed(
     values: Mapping[str, Any], row_index: int, epsilon: float, seeds: Sequence[int]
 ) -> int:
     epsilon_code = int(round(epsilon * 1_000_000))
-    base_seed = int(values["seed_policy"].get("bridge_seed", 20260811))
+    base_seed = int(values["seed_policy"]["bridge_seed"])
     sequence = np.random.SeedSequence([base_seed, row_index, epsilon_code, *seeds, 4])
     return int(sequence.generate_state(1, dtype=np.uint64)[0] % (2**63 - 1))
 
@@ -107,7 +107,6 @@ def _evaluate_row_cuda(
         [total_end + 1.0] * batch,
     )
     probability_cutoff = float(values["numerics"]["bridge_probability_cutoff"])
-    reference_phi = float(values["execution"]["threshold_reference_phi_price"])
     delta_price = float(values["model"]["delta_price"])
     sigma2 = float(values["model"]["sigma_x_price_per_sqrt_second"]) ** 2
 
@@ -129,7 +128,6 @@ def _evaluate_row_cuda(
         initial_side: Any,
         initial_count: Any,
         initial_reward: Any,
-        initial_frozen_reward: Any,
         initial_overshoot: Any,
         initial_open_count: Any,
         initial_bridge_count: Any,
@@ -146,16 +144,18 @@ def _evaluate_row_cuda(
         lower_deterministic = (lg <= -theta) | (pg <= -theta)
         upper_valid = (lg < theta) & (pg < theta)
         lower_valid = (lg > -theta) & (pg > -theta)
-        p_upper = torch.where(
+        p_upper_raw = torch.where(
             upper_valid,
             torch.exp(-2.0 * (theta - lg) * (theta - pg) / variance),
             0.0,
         ).clamp_(0.0, 1.0)
-        p_lower = torch.where(
+        p_lower_raw = torch.where(
             lower_valid,
             torch.exp(-2.0 * (lg + theta) * (pg + theta) / variance),
             0.0,
         ).clamp_(0.0, 1.0)
+        p_upper = torch.where(p_upper_raw >= probability_cutoff, p_upper_raw, 0.0)
+        p_lower = torch.where(p_lower_raw >= probability_cutoff, p_lower_raw, 0.0)
         upper_hit = upper_deterministic | (random_upper < p_upper)
         lower_hit = lower_deterministic | (random_lower < p_lower)
         both = upper_hit & lower_hit
@@ -221,12 +221,8 @@ def _evaluate_row_cuda(
         prior_boundary = initial_count[:, None, :] + local_cumulative - 1 > 0
         rewarded = fills & prior_boundary
         reward_values = 2.0 * (torch.abs(gaps) - spreads / 2.0)
-        frozen_values = 2.0 * (torch.abs(gaps) - reference_phi)
         count = initial_count + fills.sum(dim=1, dtype=torch.int64)
         reward = initial_reward + torch.where(rewarded, reward_values, 0.0).sum(dim=1)
-        frozen_reward = initial_frozen_reward + torch.where(
-            rewarded, frozen_values, 0.0
-        ).sum(dim=1)
         overshoot_values = torch.clamp_min(
             torch.abs(gaps) - local_thresholds[:, None, :], 0.0
         )
@@ -250,16 +246,19 @@ def _evaluate_row_cuda(
         first_time = torch.minimum(initial_first_time, local_first)
         last_time = torch.maximum(initial_last_time, local_last)
         omitted = torch.where(
-            (p_upper > 0.0) & (p_upper < probability_cutoff), p_upper, 0.0
+            (p_upper_raw > 0.0) & (p_upper_raw < probability_cutoff),
+            p_upper_raw,
+            0.0,
         ).sum(dim=(1, 2)) + torch.where(
-            (p_lower > 0.0) & (p_lower < probability_cutoff), p_lower, 0.0
+            (p_lower_raw > 0.0) & (p_lower_raw < probability_cutoff),
+            p_lower_raw,
+            0.0,
         ).sum(dim=(1, 2))
-        competing = torch.minimum(p_upper, p_lower).sum(dim=(1, 2))
+        competing = torch.minimum(p_upper_raw, p_lower_raw).sum(dim=(1, 2))
         return (
             final_side,
             count,
             reward,
-            frozen_reward,
             overshoot,
             open_count,
             bridge_count,
@@ -284,7 +283,6 @@ def _evaluate_row_cuda(
         return (
             torch.zeros(shape, dtype=torch.int8, device="cuda") if side is None else side,
             torch.zeros(shape, dtype=torch.int64, device="cuda"),
-            torch.zeros(shape, dtype=torch.float32, device="cuda"),
             torch.zeros(shape, dtype=torch.float32, device="cuda"),
             torch.zeros(shape, dtype=torch.float32, device="cuda"),
             torch.zeros(shape, dtype=torch.int64, device="cuda"),
@@ -363,9 +361,9 @@ def _evaluate_row_cuda(
             if not compiled_once:
                 cold_seconds = elapsed
                 compiled_once = True
-            carry = result[:11]
-            omitted_segment += result[11]
-            competing_segment += result[12]
+            carry = result[:10]
+            omitted_segment += result[10]
+            competing_segment += result[11]
         return (
             carry,
             omitted_segment.detach().cpu().numpy().astype(np.float64),
@@ -384,7 +382,6 @@ def _evaluate_row_cuda(
         terminal_side,
         fill_count,
         reward_sum,
-        frozen_reward_sum,
         overshoot_sum,
         open_count,
         bridge_count,
@@ -395,9 +392,6 @@ def _evaluate_row_cuda(
     ) = host
 
     replications: list[Figure4Replication] = []
-    minimum_intervals = int(
-        values["evaluation"]["minimum_complete_interfill_intervals_per_seed_and_policy"]
-    )
     for batch_index, trace in enumerate(traces):
         initial_positions = initial_side_host[batch_index]
         measurement_index = int(
@@ -419,11 +413,6 @@ def _evaluate_row_cuda(
                 else 0.0
             )
             rate = float(reward_sum[batch_index, policy_index] / duration) if duration > 0 else 0.0
-            frozen_rate = (
-                float(frozen_reward_sum[batch_index, policy_index] / duration)
-                if duration > 0
-                else 0.0
-            )
             terminal_position = int(terminal_side[batch_index, policy_index])
             initial_position = int(initial_positions[policy_index])
             local_cash = float(cash[batch_index, policy_index])
@@ -448,13 +437,11 @@ def _evaluate_row_cuda(
                     "threshold_price": float(thresholds64[policy_index]),
                     "fill_count": count,
                     "complete_interval_count": completed,
-                    "minimum_interval_requirement_met": completed >= minimum_intervals,
                     "renewal_rate_per_second": rate,
                     "renewal_rate_over_alpha_s_g": rate
                     / (calibration.alpha_per_second * calibration.s_g_price),
                     "renewal_rate_over_surrogate_optimum": rate
                     / calibration.surrogate_optimum_rate_per_second,
-                    "frozen_cost_rate_per_second": frozen_rate,
                     "mean_interfill_seconds": duration / completed if completed else None,
                     "mean_fill_overshoot_price": float(
                         overshoot_sum[batch_index, policy_index] / count
@@ -489,11 +476,10 @@ def _evaluate_row_cuda(
             "flat_entry_competing_probability_sum_burn_in_only": float(
                 pre_competing[batch_index]
             ),
-            "nonflat_policy_count_at_end": int(np.count_nonzero(terminal_side[batch_index])),
+            "nonflat_policy_count_at_measurement_start": int(
+                np.count_nonzero(initial_side_host[batch_index])
+            ),
             "policy_count": policy_count,
-            "invariant_violation_count": policy_count
-            - int(np.count_nonzero(initial_side_host[batch_index])),
-            "nonfinite_value_count": 0,
             "wealth_marking_identity_abs_residual_max": max(
                 float(row["wealth_marking_identity_abs_residual"]) for row in rows
             ),
