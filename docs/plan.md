@@ -2,12 +2,11 @@
 
 > **Обновлено:** 2026-08-11
 >
-> **Ветка:** `feat/p2-analytical-baseline`
+> **Ветка:** `feat/p3-jump-simulator`
 >
-> **Текущий статус:** P2 — analytical executable baseline завершён; Figure 3 reproduced
+> **Текущий статус:** P3 выполнен, но confirmatory gate не пройден из-за flow/control precision
 >
-> **Следующий шаг:** P3 — реализовать controlled jump simulator и сначала пройти
-> pathwise invariants до запуска `SIM-MOMENTS-001`
+> **Следующий шаг:** отдельный preregistered P3 precision extension; P4 заблокирован
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -385,8 +384,8 @@ source TOML после запуска не переписывается под �
 | P0. Source audit и план | Common | **completed** | PDF/source проверены, unknowns и scope зафиксированы |
 | P1. Contracts и protocols | Common | **completed** | ADRs, schema, configs и acceptance thresholds приняты до runs |
 | P2. Analytical executable baseline | Synthetic | **completed** | Closed forms, tests, smoke run и Figure 3 reproduction |
-| P3. Jump simulator и theorem checks | Synthetic | **next** | Invariants, timestep convergence, moments/ACF report |
-| P4. Figures 2/4/5 и paper report | Synthetic | pending | Claim matrix с reproduced/not-reproduced/underdetermined |
+| P3. Jump simulator и theorem checks | Synthetic | **completed; gate failed** | Invariants прошли; flow/control precision gates не прошли |
+| P4. Figures 2/4/5 и paper report | Synthetic | **blocked by P3** | Claim matrix с reproduced/not-reproduced/underdetermined |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
 | P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
@@ -519,6 +518,32 @@ Acceptance:
   preregistered lags; gap bins остаются заранее заданным descriptive diagnostic;
 - negative/unbalanced control обнаруживает parity split ожидаемого знака;
 - report содержит effective sample size, seeds, burn-in, horizon, runtime и hardware.
+
+Результат P3 — **completed / acceptance failed / inconclusive**. Реализован
+`adaptive_left_hazard_single_jump_v1`; оба preregistered experiments выполнены из
+clean commit `6aa0e48` на 20 seeds и всей ladder
+$\epsilon\in\{0.02,0.01,0.005\}$. Все pathwise invariants, bitwise primary replays,
+generator identities и balanced refinement coordinates прошли. Balanced mean,
+variance, finite-$h$ slopes и шесть ACF lags согласованы с theory.
+
+Два заранее заданных statistical gates не подтверждены при редкой open parity:
+
+- `SIM-MOMENTS-001`: primary flow-balance error `0.0333788` превысил limit `0.03`,
+  хотя fine-resolution error равен `0.0114669`, primary t-interval signed residual
+  включает zero и весь refinement gate прошёл;
+- `SIM-UNBALANCED-001`: directional contrast mean положителен (`0.257337`), но
+  one-sided 95% lower bound `0.0240021` ниже требуемых `0.05`; primary--fine shift
+  `0.189537` также превысил conservative difference-SE threshold `0.168574`.
+
+Open occupancy составила лишь около `0.0032--0.0036`, поэтому open-parity slopes и
+flow ratios имеют высокую seed-level uncertainty. Это не исправлялось post hoc:
+configs, horizons, seeds, estimators и thresholds не менялись; оба failed runs и
+примерно 112 MiB event logs сохранены локально. Paper flow identity и negative control
+получают status `inconclusive`, а не `contradicted`; P4 запрещён до нового
+preregistered precision experiment ID или честного решения остановить synthetic track.
+
+Factual closeout: [`docs/reports/p3-controlled-simulation.md`](reports/p3-controlled-simulation.md).
+Stop/next-direction decision: [`ADR-0004`](adr/0004-p3-gate-failure-and-precision-stop.md).
 
 ### P4. Independent paper-result reconstruction
 
@@ -731,9 +756,9 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 |---|---|---|---|
 | `ANA-SMOKE-001` | `cfg/experiments/ana_smoke_001.toml` | One config, Dawson residual, one metric | passed; `20260811T170052058822Z-290ea5809cb6-det` |
 | `ANA-FIG3-001` | `cfg/experiments/ana_fig3_001.toml` | Surrogate thresholds/rate curves | reproduced; `20260811T170104389894Z-4c1014e843c6-det` |
-| `SIM-MOMENTS-001` | `cfg/experiments/sim_moments_001.toml` | Parity, drift, variance, ACF, occupancy | preregistered; not run |
-| `SIM-UNBALANCED-001` | `cfg/experiments/sim_unbalanced_001.toml` | One-factor parity-drift negative control | preregistered; not run |
-| `SIM-FIG4-001` | `cfg/experiments/sim_fig4_001.toml` | Jump versus surrogate band sweep | preregistered; not run; underdetermined-author-settings |
+| `SIM-MOMENTS-001` | `cfg/experiments/sim_moments_001.toml` | Parity, drift, variance, ACF, occupancy | acceptance failed; `20260811T172240473272Z-060cfab011c3-det` |
+| `SIM-UNBALANCED-001` | `cfg/experiments/sim_unbalanced_001.toml` | One-factor parity-drift negative control | acceptance failed; `20260811T172916459381Z-5497c39af2dd-det` |
+| `SIM-FIG4-001` | `cfg/experiments/sim_fig4_001.toml` | Jump versus surrogate band sweep | blocked by P3; not run; underdetermined-author-settings |
 | `SIM-FIG5-001` | `cfg/experiments/sim_fig5_001.toml` | Strategy path, fills, wealth identities | pending-illustrative |
 | `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | Eligibility, quality, split freeze | pending-data-source |
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Oracle/causal filter diagnostics | pending |
@@ -778,10 +803,12 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 
 ## 9. Ближайший исполняемый шаг
 
-P3 начинается с расширения strict typed schema на `SIM-MOMENTS-001` и минимальных
-domain/runtime state для six event types из ADR-0002. До target Monte Carlo run нужны
-unit/property tests на nonnegative intensities, allowed jumps, parity lock, canonical
-$G=M-X$, event ordering, deterministic replay и Brownian observation boundaries.
-После внутреннего tiny smoke выполняется preregistered resolution ladder
-`q_max={0.02,0.01,0.005}` для `SIM-MOMENTS-001`; failure invariants или convergence
-останавливает этап до Figure 4. Market data и backtest в P3 не входят.
+Текущие `SIM-MOMENTS-001` и `SIM-UNBALANCED-001` не перезапускаются с изменёнными
+параметрами. Если synthetic track продолжается, следующий шаг — до нового output
+зарегистрировать dated precision amendment и новые experiment IDs, сохранив primitives,
+estimators, thresholds, original seed prefix и старые failed artifacts. Power analysis
+должен выбрать только дополнительный horizon/seed count для уменьшения uncertainty
+редкой open parity; просмотр P3 результатов нельзя использовать для изменения gate или
+подбора более удобного model regime. Затем сначала повторяется balanced/control ladder.
+Без такого evidence P4 Figure 4 и strategy simulation остаются blocked; empirical
+market-data track также не получает simulator validation от текущего P3.
