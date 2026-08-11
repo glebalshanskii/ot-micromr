@@ -2,11 +2,11 @@
 
 > **Обновлено:** 2026-08-12
 >
-> **Ветка:** `feat/p5-data-feasibility`
+> **Ветка:** `feat/p6-causal-estimator`
 >
-> **Текущий статус:** P4/P4C completed; P5 completed/passed on frozen OKX train sample
+> **Текущий статус:** P5 completed/passed; P6 in progress, causal filter protocol frozen
 >
-> **Следующий шаг:** P6 preregistered same-venue causal efficient-price estimator
+> **Следующий шаг:** implement and validate `FILTER-SYN-001` before empirical target
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -392,7 +392,7 @@ source TOML после запуска не переписывается под �
 | P4. Figures 2/4/5 и paper report | Synthetic | **completed** | Partial reproduction; corrected operational validity passed; scientific family inconclusive |
 | P4C. Current implementation cleanup | Synthetic | **completed** | One active implementation per experiment; 51 tests pass; direct P4 regression accepted |
 | P5. Data feasibility и universe freeze | Empirical | **completed; passed** | Content-addressed OKX sample, quality/eligibility gate и immutable splits прошли |
-| P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
+| P6. Causal efficient-price estimation | Empirical | **in progress; protocol frozen** | Synthetic recovery и real-data diagnostics без P&L tuning |
 | P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
 | P8. Nested development/validation | Empirical | pending | Заморожена одна primary strategy и limited secondary set |
 | P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
@@ -761,6 +761,12 @@ limitations: [`p5-okx-data-feasibility.md`](reports/p5-okx-data-feasibility.md).
 ### P6. Causal estimation of latent efficient price
 
 Primary scientific problem practical track — не threshold tuning, а оценка $X_t$.
+
+Исполняемый contract зафиксирован до filter outputs в
+[`ADR-0014`](adr/0014-p6-causal-efficient-price-filter.md) и
+[`p6-causal-efficient-price.md`](protocols/empirical/p6-causal-efficient-price.md).
+P6 разделён на `FILTER-SYN-001` oracle-diagnostic leg и `EMP-FILTER-001` practical-local
+leg; orders, execution и P&L запрещены в обоих.
 
 В текущем scope все feasible real-data estimators являются same-venue: causal filter
 swap book/trades, OKX spot reference либо OKX index/mark. Cross-venue estimates и Binance
