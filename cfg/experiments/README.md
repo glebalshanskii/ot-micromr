@@ -14,6 +14,17 @@ config.
 | `SIM-MOMENTS-002` | `sim_moments_002.toml` | Integrated-flow and balanced-generator validation | passed |
 | `SIM-UNBALANCED-002` | `sim_unbalanced_002.toml` | One-factor jump-compensator negative control | passed |
 | `SIM-FIG4-002` | `sim_fig4_002.toml` | Powered Figure 4 reconstruction on the current CPU/CUDA implementation | operationally passed; scientific family inconclusive |
+| `EMP-DATA-001` | `emp_data_001.toml` | OKX raw integrity, large-tick eligibility and chronological split freeze | source/protocol preregistered; target config awaits content hash |
+
+`emp_data_001_sources.toml` is the strict acquisition contract for the P5 target. It contains
+only official OKX URLs selected from train dates. Acquisition is always explicit:
+
+```bash
+uv run ot-micromr fetch-data cfg/experiments/emp_data_001_sources.toml
+```
+
+The command writes ignored raw files and a content-addressed manifest below `data/`; it does
+not execute an experiment or inspect validation/test data.
 
 The source paper does not disclose the primitive parameters, simulator, seeds or raw Figure 4
 outputs. All `SIM-*` parameters are therefore project-chosen and must not be described as

@@ -102,7 +102,7 @@ def git_provenance(repository_root: Path) -> dict[str, Any]:
 
 def environment_provenance(repository_root: Path) -> dict[str, Any]:
     dependencies: dict[str, str] = {}
-    for distribution in ("ot-micromr", "numpy", "scipy", "matplotlib", "torch"):
+    for distribution in ("ot-micromr", "numpy", "scipy", "matplotlib", "orjson", "torch"):
         try:
             dependencies[distribution] = importlib.metadata.version(distribution)
         except importlib.metadata.PackageNotFoundError:
