@@ -224,5 +224,7 @@ For the current executable contract:
 - only the CPU `float64` market plus compiled CUDA `float32` crossing implementation remains.
 
 The historical target and review artifacts remain valid evidence under their cited commits.
-A clean current-code rerun is required for the new direct-run manifest and acceptance status;
-scientific conclusions are compared as a regression, not retuned.
+The clean current-code regression `20260811T211511185484Z-e51b9cf3d54d-det` was run from commit
+`5a83b655c353ef0ca986e77f5e31899c6b18d497` without retuning. Its direct-run manifest reports all
+ten operational gates passed; the scientific family remains `inconclusive`, matching the frozen
+target conclusion.

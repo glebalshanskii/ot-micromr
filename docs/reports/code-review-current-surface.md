@@ -33,9 +33,14 @@ Removed components:
 
 ## Verification
 
-The complete unit/integration suite passes, including the compiled CUDA accounting test. A clean
-canonical `SIM-FIG4-002` rerun is required after the cleanup commit; its run ID, runtime and
-scientific/operational decisions will be added here and to the main paper report.
+The complete 51-test unit/integration suite passes, including the compiled CUDA accounting test.
+The clean canonical regression run
+`SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det` completed from commit
+`5a83b655c353ef0ca986e77f5e31899c6b18d497` in `28.987 s`. Its own runner and manifest report
+`acceptance_passed=true`; all ten current operational gates pass. The scientific result is
+unchanged: inward shifts at the first two gamma rows are supported, the high-gamma row and the
+six-check refinement family remain inconclusive. The canonical result table and artifact links
+are in [`paper-reproduction.md`](paper-reproduction.md).
 
 ## Remaining risks
 

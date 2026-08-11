@@ -4,9 +4,9 @@
 >
 > **Ветка:** `refactor/current-experiments-only`
 >
-> **Текущий статус:** P4 completed; active implementation cleanup reviewed; clean P4 regression rerun pending
+> **Текущий статус:** P4/P4C completed; repository exposes only current experiment implementations
 >
-> **Следующий шаг:** clean current-code `SIM-FIG4-002` regression rerun, затем P5 data feasibility
+> **Следующий шаг:** P5 data feasibility, licensing и frozen universe
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -389,7 +389,7 @@ source TOML после запуска не переписывается под �
 | P3S. Statistical gate audit | Common | **completed** | Gates classified; TOST/superiority/multiplicity/power policy accepted |
 | P3V. Margin sensitivity и powered validation | Synthetic | **completed; supported** | SESOI bounded by downstream distortion; new independent confirmatory runs passed |
 | P4. Figures 2/4/5 и paper report | Synthetic | **completed** | Partial reproduction; corrected operational validity passed; scientific family inconclusive |
-| P4C. Current implementation cleanup | Synthetic | **in progress** | One active implementation per experiment; tests pass; clean P4 regression rerun pending |
+| P4C. Current implementation cleanup | Synthetic | **completed** | One active implementation per experiment; 51 tests pass; direct P4 regression accepted |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
 | P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
@@ -659,45 +659,22 @@ author primitives/seeds. Опубликованные диапазоны (при
 rate loss at $\theta_D$, 5--6% at $\theta^*$) сравниваются с confidence intervals, но не
 служат tuning objective.
 
-Перед новым Figure 4 run legacy `SIM-FIG4-001` заменяется новым ID. Inward-shift claim
-требует family-adjusted one-sided lower bound выше заранее обоснованного minimum shift;
-rate/loss estimates публикуются с seed-cluster intervals. Numerical refinement проходит
-только equivalence test. Pilot amendment заменил эвристический floor 100 на pathwise floor
-20, но post-target audit выявил, что и новый floor не имел statistical/power justification.
-ADR-0009 оставляет counts coverage diagnostic и использует powered seed-cluster design для
-stochastic решения.
+Current `SIM-FIG4-002` contract использует три response rows, 30 strategy seeds, horizon 300,
+grid step 0.05, 10,000 bootstrap draws и hybrid CPU `float64` / compiled CUDA `float32`
+execution. Power calculation, minimum effect 0.05 и secondary refinement limitation зафиксированы
+в [`p4-figure-reconstruction.md`](protocols/synthetic/p4-figure-reconstruction.md). Figures 2 и 5
+генерируются как явно illustrative artifacts того же run.
 
-Непосредственный следующий шаг: реализовать continuous-crossing policy monitor,
-preregister `SIM-FIG4-002` и до target inspection benchmark-ом выбрать CPU/GPU execution
-для полного, а не endpoint-only, kernel.
+Clean current-code run `SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det` выполнен из
+commit `5a83b655c353ef0ca986e77f5e31899c6b18d497` за `28.987 s`. Все десять operational gates
+прошли непосредственно в runner. Inward shift 15% и 20% supported для gamma `0.272/0.342`,
+high-gamma 5% inconclusive; refinement family inconclusive. Итог P4:
+**completed / operational validity passed / scientific inconclusive**. История исправления
+ошибочного прежнего acceptance rule сохранена в [`ADR-0009`](adr/0009-correct-p4-operational-acceptance.md),
+но этот rule, его diagnostic и отдельный reviewer отсутствуют в активном коде. Полный evidence
+report: [`paper-reproduction.md`](reports/paper-reproduction.md).
 
-P4 pilot и target freeze выполнены 2026-08-11. CPU pilot
-`20260811T200458288216Z-d9d6dc74bb9e-det` занял `186.996 s`; эквивалентный hybrid
-CPU/CUDA pilot `20260811T201826249541Z-d9d6dc74bb9e-det` — `34.424 s` (`5.43x`).
-Target `SIM-FIG4-002` preregistered на трёх response rows, 30 новых seeds, horizon 300,
-grid step 0.05, 10,000 bootstrap draws и 150-second stop budget. Power calculation,
-minimum effect 0.05 и secondary refinement limitation зафиксированы в
-[`p4-figure-reconstruction.md`](protocols/synthetic/p4-figure-reconstruction.md) до target.
-Figures 2 и 5 генерируются как явно illustrative artifacts того же run.
-
-Target выполнен один раз из clean commit `ca9aa7c1e9841fccb35f47f41a8e0863e795d3c7`:
-`SIM-FIG4-002/20260811T202753134457Z-837035232ead-det`, runtime `34.244 s`.
-Original runner status `acceptance_failed` был вызван только all-cell interval floor: minimum
-12 против 20 в far-right high-gamma cells. Post-target methodological audit установил, что это
-необоснованный count heuristic над зависимыми within-path intervals. ADR-0009 пересчитывает
-решение без изменения raw data или scientific tests: все corrected operational gates прошли.
-Inward shift 15% и 20% supported для gamma `0.272/0.342`, high-gamma 5% inconclusive;
-refinement family inconclusive. P4 получает status
-**completed / operational validity passed / scientific inconclusive**.
-Corrected review policy `p4-operational-validity-v2` выполнена implementation file из clean
-commit `5c60e490f02b6036d28160df94cce634aee23280`; review artifact SHA-256
-`f88615979b4b5c905ec541f715ff4ca6f938f66bf9f1f70c9fa2c3224ffd4466`.
-Полный evidence report: [`paper-reproduction.md`](reports/paper-reproduction.md).
-
-Следующий шаг после cleanup regression — P5: выбрать licensed event-level source и до
-просмотра P&L заморозить universe, eligibility и chronological split.
-
-### P4C. Current implementation cleanup — in progress
+### P4C. Current implementation cleanup — completed
 
 После merge PR #7 выполнен полный review активного executable surface. По
 [`ADR-0010`](adr/0010-current-experiment-surface.md) удалены P3 v1 configs/aggregators,
@@ -710,9 +687,10 @@ log-dependent event fraction, исправлены точная фаза non-fla
 bridge probability cutoff. Полный review:
 [`code-review-current-surface.md`](reports/code-review-current-surface.md).
 
-До завершения P4C требуется clean commit и один regression rerun `SIM-FIG4-002`. Его цель —
-подтвердить отсутствие изменения scientific conclusion после удаления unreachable code;
-параметры, seeds и статистические правила не подбираются повторно.
+Regression run из clean commit прошёл все operational gates и сохранил scientific conclusion
+без повторного подбора параметров, seeds или статистических правил. Следующий этап — P5: выбрать
+licensed event-level source и до просмотра P&L заморозить universe, eligibility и chronological
+split.
 
 ### P5. Data feasibility, licensing и frozen universe
 
@@ -917,7 +895,7 @@ provenance. Разные information-set modes не агрегируются б�
 | `ANA-FIG3-001` | `cfg/experiments/ana_fig3_001.toml` | Surrogate thresholds/rate curves | reproduced; `20260811T170104389894Z-4c1014e843c6-det` |
 | `SIM-MOMENTS-002` | `cfg/experiments/sim_moments_002.toml` | Integrated flow and balanced generator | passed; global P3V supported |
 | `SIM-UNBALANCED-002` | `cfg/experiments/sim_unbalanced_002.toml` | One-factor jump-compensator control | passed; global P3V supported |
-| `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | clean current-code rerun pending; prior science inconclusive |
+| `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | operationally passed; scientific family inconclusive; `20260811T211511185484Z-e51b9cf3d54d-det` |
 | `SIM-FIG5-001` | integrated into `SIM-FIG4-002` artifacts | Strategy path, fills, wealth identities | completed illustrative artifact |
 | `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | Eligibility, quality, split freeze | pending-data-source |
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Oracle/causal filter diagnostics | pending |

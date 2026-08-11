@@ -1,6 +1,6 @@
 # P4 paper reproduction report
 
-- Date: 2026-08-11
+- Date: 2026-08-12
 - Paper: Amaral, *Optimal Trading of Microstructure Mean Reversion*,
   `arXiv:2608.00885v1`
 - Result label: `independent_partial_reproduction`
@@ -8,7 +8,8 @@
 - Protocol: [`p4-figure-reconstruction.md`](../protocols/synthetic/p4-figure-reconstruction.md)
 - Decisions: [`ADR-0007`](../adr/0007-p4-hybrid-cpu-cuda-backend.md),
   [`ADR-0008`](../adr/0008-p4-crossing-execution-and-inference.md),
-  [`ADR-0009`](../adr/0009-correct-p4-operational-acceptance.md)
+  [`ADR-0009`](../adr/0009-correct-p4-operational-acceptance.md),
+  [`ADR-0010`](../adr/0010-current-experiment-surface.md)
 
 ## Outcome
 
@@ -22,31 +23,20 @@ The result is mixed. At gamma `0.272` and `0.342`, the discrete rate peaks moved
 inconclusive. Only the low-gamma row closely matched the paper's described rate losses.
 The six-test resolution-refinement family was inconclusive after Holm correction.
 
-The original runner reported `acceptance_failed` because 38 of 4,320 seed-threshold-resolution
-cells had fewer than 20 complete inter-fill intervals. Post-target audit established that this
-was an unpowered heuristic over dependent within-path cycles, not an operational-validity or
-independent-sample requirement. ADR-0009 supersedes that decision rule. A deterministic review
-of the frozen evidence passes all 11 corrected operational gates; no path, parameter, estimator,
-bootstrap result or scientific test was changed.
-
-The count remains visible as coverage information: the minimum was 12, and 38 cells (0.88%)
-fell below the historical value 20. They were concentrated in remote low-turnover thresholds;
-the three primary peak cells had minima 80, 75 and 48. Precision of the scientific comparisons
-is decided by the frozen 30-seed cluster design, confidence intervals and multiplicity-adjusted
-tests, not this count.
+The current runner directly passes all operational-validity gates. Precision of the scientific
+comparisons is decided by the frozen 30-seed cluster design, confidence intervals and
+multiplicity-adjusted tests. No trade-count coverage heuristic is part of the current code,
+artifacts or decision.
 
 ## Provenance and setup
 
 | Field | Value |
 |---|---|
 | Experiment | `SIM-FIG4-002` |
-| Run ID | `20260811T202753134457Z-837035232ead-det` |
-| Simulation commit | `ca9aa7c1e9841fccb35f47f41a8e0863e795d3c7` |
-| Corrected-review commit | `5c60e490f02b6036d28160df94cce634aee23280` |
-| Corrected policy | `p4-operational-validity-v2` |
-| Review artifact SHA-256 | `f88615979b4b5c905ec541f715ff4ca6f938f66bf9f1f70c9fa2c3224ffd4466` |
-| RunSpec SHA-256 | `837035232ead731c04a7d0a04970831a0388c55867a40e8d606f65d0f8f28201` |
-| Source config SHA-256 | `74de348d2e3f0406770590749178d284ec2570fe3dbb9c50778155a2148ddf8f` |
+| Run ID | `20260811T211511185484Z-e51b9cf3d54d-det` |
+| Simulation commit | `5a83b655c353ef0ca986e77f5e31899c6b18d497` |
+| RunSpec SHA-256 | `e51b9cf3d54d3469f74184b69fc2d455e14707b5b46a0b4c7a98be9186944c08` |
+| Source config SHA-256 | `b2b389e63e8d72bb9555f086baa1013be7c72805a4990c691a8dd586edc28cd6` |
 | Seeds | 12 calibration; 30 independent target strategy seeds |
 | Resolutions | `epsilon={0.01,0.005}` |
 | Measured horizon | 300 reversion times |
@@ -54,13 +44,12 @@ tests, not this count.
 | Bootstrap | 10,000 complete seed-vector resamples |
 | Hardware | Intel i9-12900H, 20 logical CPUs; NVIDIA RTX 3080 Ti Laptop, 16 GB |
 | Software | Python 3.14.0; NumPy 2.5.2; SciPy 1.18.0; PyTorch 2.13.0, CUDA 13.0 |
-| Runtime | 34.244 s |
+| Runtime | 28.987 s |
 
 Adaptive market endpoints were generated in CPU `float64` with ten processes. Continuous
-Brownian-bridge crossings, alternating fills and threshold reductions used compiled CUDA
-`float32`; the CUDA crossing phase took 9.964 s and CPU market generation 19.156 s. The
-corresponding pilot fell from 186.996 s on the old policy-inside-step CPU implementation to
-34.424 s on the hybrid implementation (`5.43x`).
+Brownian-bridge crossings and alternating fills used compiled CUDA `float32`; vectorized
+functional reductions used NumPy. CUDA crossing evaluation took 8.912 s and CPU market
+generation 16.278 s.
 
 ## Figure 4 results
 
@@ -80,9 +69,9 @@ Thus the surrogate preserves the broad curve shape but overstates the exact-mode
 this project-chosen family.
 
 The Figure 4 plot and data are in
-[`figure4.png`](../../outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det/figures/figure4.png)
+[`figure4.png`](../../outputs/SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det/figures/figure4.png)
 and
-[`figure4-data.csv`](../../outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det/figures/figure4-data.csv).
+[`figure4-data.csv`](../../outputs/SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det/figures/figure4-data.csv).
 
 ## Statistical and operational gates
 
@@ -96,16 +85,13 @@ using independent Welch TOST, margin 0.02 and Holm correction across six checks.
 equivalence p-values ranged from 0.124 to 0.345, so every check was inconclusive. No extra
 seeds were added after inspection.
 
-The corrected operational policy tests completeness and validity rather than an arbitrary
-exposure count. All 11 gates passed: coordinate and policy grids were complete; every requested
-rate estimator was defined and finite; every policy was non-flat at measurement; state and
-non-finite violations were zero; deterministic market replay matched; maximum Dawson residual
-was `4.13e-14`; maximum omitted-crossing bound was `5.28e-11`; maximum wealth-marking identity
-residual was `4.26e-14`.
+The current operational policy tests completeness and validity. All 10 gates passed: every
+replication, response row, threshold and policy coordinate was present; every requested rate
+estimator was defined and finite; every policy was non-flat at measurement; deterministic market
+replay matched; maximum Dawson residual was `4.13e-14`; maximum omitted-crossing bound was
+`5.28e-11`; maximum wealth-marking identity residual was `4.26e-14`.
 
-The original `summary.json` and manifest remain unchanged and therefore still contain the
-historical `acceptance_failed` value. The separate corrected review is canonical for operational
-status. This preserves provenance without preserving the mistaken conclusion. Scientific status
+The run's own `summary.json` and manifest both report `acceptance_passed=true`. Scientific status
 remains `inconclusive`: two primary row claims are supported, the high-gamma row is inconclusive,
 and no refinement comparison passes family-adjusted equivalence.
 
@@ -114,17 +100,17 @@ and no refinement comparison passes family-adjusted equivalence.
 Figure 2 is a structural illustration with an explicitly elevated opening baseline so
 two-tick episodes are visible. It demonstrates parity-locked bid/ask jumps and a continuous
 efficient price; it is not calibrated or pixel-identical to the paper. Artifacts:
-[`figure2.png`](../../outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det/figures/figure2.png)
+[`figure2.png`](../../outputs/SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det/figures/figure2.png)
 and
-[`figure2-data.csv`](../../outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det/figures/figure2-data.csv).
+[`figure2-data.csv`](../../outputs/SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det/figures/figure2-data.csv).
 
 Figure 5 uses a parity-dependent Dawson threshold, displayed-touch fills, one-lot entry,
 two-lot flips and both mid- and efficient-price-marked wealth. Its single path has positive
 gross wealth after the model spread, but remains an illustrative synthetic path and is not
 evidence of real-market profitability. Artifacts:
-[`figure5.png`](../../outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det/figures/figure5.png)
+[`figure5.png`](../../outputs/SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det/figures/figure5.png)
 and
-[`figure5-data.csv`](../../outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det/figures/figure5-data.csv).
+[`figure5-data.csv`](../../outputs/SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det/figures/figure5-data.csv).
 
 ## Limitations and claims
 
@@ -133,8 +119,8 @@ and
 - The market simulator is an adaptive frozen-left single-jump approximation. Brownian
   one-sided hit probabilities are exact conditional on endpoints, while simultaneous
   two-boundary hits are bounded and refined rather than exactly timed.
-- CUDA and CPU use different bridge RNGs; pilot-level functional agreement replaces
-  impossible bitwise cross-library identity.
+- CPU market generation and CUDA crossing evaluation use different RNG families; deterministic
+  replay is guaranteed within the current backend, not bitwise across libraries.
 - Fees, latency, slippage, impact, queue position and filtering of the latent efficient price
   are absent. Positive synthetic gross rates do not establish a deployable strategy.
 - The primary discrete argmax is noisy and non-smooth; fitted peaks are diagnostic only.
@@ -151,8 +137,5 @@ Claim statuses:
 | Real-market profitability | not tested; requires P5--P9 |
 
 Canonical raw evidence is the immutable run directory
-[`outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det`](../../outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det/).
-The canonical operational decision is the derived
-[`review.json`](../../outputs/SIM-FIG4-REVIEW-001/20260811T202753134457Z-837035232ead-det-acceptance-v2/metrics/review.json),
-which hashes every source evidence file and records a clean implementation commit. It is
-regenerated without market simulation by `ot-micromr review-p4-acceptance`.
+[`outputs/SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det`](../../outputs/SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det/).
+Its manifest hashes all required artifacts and records the clean implementation commit.

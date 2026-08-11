@@ -38,6 +38,7 @@ active is not required for scientific provenance.
 
 The active code path and documentation now identify one implementation per experiment. Current
 artifact names are not promised to be backward-compatible with old run directories; old reports
-remain readable and cite their original commits. `SIM-FIG4-002` must be rerun from a clean commit
-to produce a direct current-run acceptance result and confirm that removal of unreachable code
-did not change the scientific conclusion.
+remain readable and cite their original commits. The clean direct regression
+`SIM-FIG4-002/20260811T211511185484Z-e51b9cf3d54d-det` completed from commit
+`5a83b655c353ef0ca986e77f5e31899c6b18d497`: all ten operational gates passed and the scientific
+conclusion remained unchanged (`inconclusive` at the family level).
