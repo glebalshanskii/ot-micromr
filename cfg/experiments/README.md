@@ -9,8 +9,8 @@ written separately to `manifest.json` and never mutates the preregistered TOML.
 
 | Experiment | Config | Purpose | Run status |
 |---|---|---|---|
-| `ANA-SMOKE-001` | `ana_smoke_001.toml` | One deterministic Dawson-root contract | preregistered; not run |
-| `ANA-FIG3-001` | `ana_fig3_001.toml` | Deterministic Figure 3 reconstruction | preregistered; not run |
+| `ANA-SMOKE-001` | `ana_smoke_001.toml` | One deterministic Dawson-root contract | passed in P2 |
+| `ANA-FIG3-001` | `ana_fig3_001.toml` | Deterministic Figure 3 reconstruction | reproduced in P2 |
 | `SIM-MOMENTS-001` | `sim_moments_001.toml` | Jump-model invariants and stationary theorem checks | preregistered; not run |
 | `SIM-UNBALANCED-001` | `sim_unbalanced_001.toml` | One-factor parity-drift negative control | preregistered; not run |
 | `SIM-FIG4-001` | `sim_fig4_001.toml` | Independent partial Figure 4 reconstruction | preregistered; not run |
@@ -29,3 +29,8 @@ begin in P2/P3 after the strict typed validator and runner exist.
 Missing or unknown fields, non-finite floats, scientific CLI overrides and implicit
 seeds/defaults are errors. New result-affecting values require a new config or a dated
 protocol amendment before the affected target output is inspected.
+
+P2 implements the strict typed validator for the two `ANA-*` contracts. The three
+`SIM-*` TOMLs remain preregistered inputs; their complete typed validator and runner are
+part of P3, so the current CLI rejects them as not yet executable instead of silently
+performing partial validation.

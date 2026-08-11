@@ -1,7 +1,7 @@
 # Preregistered protocol: synthetic reproduction of Amaral (2026)
 
 - **Статус:** preregistered; target runs не запускались
-- **Protocol version:** 1.0
+- **Protocol version:** 1.1
 - **Дата регистрации:** 2026-08-11
 - **Paper:** Lucas Rabechini Amaral, *Optimal Trading of Microstructure Mean Reversion*, `arXiv:2608.00885v1`
 - **Paper SHA-256:** `fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba`
@@ -9,6 +9,11 @@
 - **Related decisions:** [`ADR-0001`](../../adr/0001-research-modes-package-and-run-contract.md), [`ADR-0002`](../../adr/0002-controlled-jump-simulation-semantics.md)
 - **Configs:** [`cfg/experiments/`](../../../cfg/experiments/)
 - **Results location:** `docs/reports/paper-reproduction.md` после выполнения; этот protocol не переписывается под результат
+
+Pre-run clarification `2026-08-11`: до первого target run для bounded direct
+optimizer явно зафиксированы bounds, `xatol=10^{-12}` и `maxiter=500` в обоих
+analytical configs. Scientific estimands, grids и acceptance gates не менялись;
+target outputs при уточнении не создавались и не просматривались.
 
 ## 1. Purpose и граница claims
 
@@ -109,7 +114,7 @@ Config: `cfg/experiments/ana_smoke_001.toml`.
 - `brentq` bracket: $(\gamma+10^{-12},8]$; `float64`, `xtol=rtol=10^{-13}`,
   at most 200 iterations.
 - Cross-check: bounded direct maximization of $\widetilde R$ on
-  $[\gamma+10^{-9},8]$.
+  $[\gamma+10^{-9},8]$, `xatol=10^{-12}`, `maxiter=500`.
 - No RNG operation is permitted; the stored seed is contract metadata only.
 
 Acceptance:
@@ -128,6 +133,8 @@ Config: `cfg/experiments/ana_fig3_001.toml`.
 - Threshold grid: $\gamma=0.05,0.06,\ldots,3.00$.
 - Rate curves: $\gamma\in\{0.25,0.5,1.0\}$,
   $u\in[\gamma,3]$ with step 0.005 and exact myopic endpoint.
+- Direct-optimizer diagnostic uses $[\gamma+10^{-9},8]$, `xatol=10^{-12}` and
+  `maxiter=500`; it does not replace the preregistered Dawson-root gates.
 - Precomputed audit points from independent evaluation, not values to return blindly:
 
 | $\gamma$ | $u_D$ | $u^*$ | Rate loss at $u^*$ |
