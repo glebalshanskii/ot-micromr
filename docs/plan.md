@@ -2,11 +2,11 @@
 
 > **Обновлено:** 2026-08-11
 >
-> **Ветка:** `docs/statistical-gate-framework`
+> **Ветка:** `feat/p4-figure4-reproduction`
 >
-> **Текущий статус:** P3V выполняется по замороженному sensitivity/power protocol; P4 остаётся заблокирован
+> **Текущий статус:** P4 completed; operational acceptance failed; scientific family inconclusive
 >
-> **Следующий шаг:** downstream gate-margin sensitivity и power/compute design; P4 заблокирован
+> **Следующий шаг:** P5 licensed event-level data feasibility и frozen universe/split
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -661,8 +661,8 @@ rate loss at $\theta_D$, 5--6% at $\theta^*$) сравниваются с confid
 Перед новым Figure 4 run legacy `SIM-FIG4-001` заменяется новым ID. Inward-shift claim
 требует family-adjusted one-sided lower bound выше заранее обоснованного minimum shift;
 rate/loss estimates публикуются с seed-cluster intervals. Numerical refinement проходит
-только equivalence test. Minimum 100 intervals остаётся operational floor и не заменяет
-power analysis.
+только equivalence test. Pilot amendment заменил эвристический floor 100 на pathwise floor
+20 и отдельный powered seed-cluster design; эти два gate не подменяют друг друга.
 
 Непосредственный следующий шаг: реализовать continuous-crossing policy monitor,
 preregister `SIM-FIG4-002` и до target inspection benchmark-ом выбрать CPU/GPU execution
@@ -677,9 +677,16 @@ minimum effect 0.05 и secondary refinement limitation зафиксирован�
 [`p4-figure-reconstruction.md`](protocols/synthetic/p4-figure-reconstruction.md) до target.
 Figures 2 и 5 генерируются как явно illustrative artifacts того же run.
 
-Непосредственный следующий шаг: выполнить единственный target look `SIM-FIG4-002` из
-чистого commit, затем выпустить evidence-linked P4 report. Дополнительные seeds после
-просмотра target запрещены.
+Target выполнен один раз из clean commit `ca9aa7c1e9841fccb35f47f41a8e0863e795d3c7`:
+`SIM-FIG4-002/20260811T202753134457Z-837035232ead-det`, runtime `34.244 s`.
+Operational acceptance failed только из-за all-cell interval floor: minimum 12 против 20
+в far-right high-gamma cells; остальные deterministic/numerical gates прошли. Inward shift
+15% и 20% supported для gamma `0.272/0.342`, high-gamma 5% inconclusive; refinement family
+inconclusive. P4 получает status **completed / acceptance failed / scientific inconclusive**.
+Полный evidence report: [`paper-reproduction.md`](reports/paper-reproduction.md).
+
+Следующий шаг — P5: выбрать licensed event-level source и до просмотра P&L заморозить
+universe, eligibility и chronological split. P4 target не перезапускается.
 
 ### P5. Data feasibility, licensing и frozen universe
 
@@ -885,8 +892,8 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 | `SIM-UNBALANCED-001` | `cfg/experiments/sim_unbalanced_001.toml` | One-factor parity-drift negative control | acceptance failed; `20260811T172916459381Z-5497c39af2dd-det` |
 | `SIM-FIG4-001` | `cfg/experiments/sim_fig4_001.toml` | Jump versus surrogate band sweep | blocked by P3; not run; underdetermined-author-settings |
 | `SIM-FIG4-PILOT-002` | `cfg/experiments/sim_fig4_pilot_002.toml` | Crossing/variance/compute pilot | completed; non-claim; operational floor expectedly missed |
-| `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | preregistered; target not run |
-| `SIM-FIG5-001` | integrated into `SIM-FIG4-002` artifacts | Strategy path, fills, wealth identities | implemented; target artifact pending |
+| `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | completed; acceptance failed; science inconclusive; `20260811T202753134457Z-837035232ead-det` |
+| `SIM-FIG5-001` | integrated into `SIM-FIG4-002` artifacts | Strategy path, fills, wealth identities | completed illustrative artifact |
 | `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | Eligibility, quality, split freeze | pending-data-source |
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Oracle/causal filter diagnostics | pending |
 | `BT-SMOKE-001` | `cfg/experiments/bt_smoke_001.toml` | Toy ledger and no-look-ahead | pending |
@@ -930,7 +937,7 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 
 ## 9. Ближайший исполняемый шаг
 
-P3V supported, P4 pilot завершён, CUDA regression принят и `SIM-FIG4-002` заморожен до
-target output. Следующий и единственный P4 look — выполнить этот config из чистого commit,
-не превышая 150 секунд и не добавляя seeds после результата. Затем выпустить
-`docs/reports/paper-reproduction.md`, обновить claim matrix и перейти к P5 data feasibility.
+P4 завершён без post-target extension. Следующий шаг — P5 data feasibility: выбрать
+licensed event-level L1/L2 source, зафиксировать venue/instruments/calendar/cost metadata,
+preregister large-tick eligibility cutoffs и chronological train/validation/test split до
+любого strategy P&L. При отсутствии лицензируемых данных stage получает `blocked-data`.

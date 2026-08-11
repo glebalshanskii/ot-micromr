@@ -1,7 +1,7 @@
 # P4 protocol: independent Figures 2, 4 and 5 reconstruction
 
 - Date: 2026-08-11
-- Status: CPU pilot completed; CUDA functional regression and target amendment pending
+- Status: target completed; operational acceptance failed; scientific family inconclusive
 - Paper: Amaral, *Optimal Trading of Microstructure Mean Reversion*, `arXiv:2608.00885v1`
 - Paper SHA-256: `fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba`
 - Decision: [`ADR-0008`](../../adr/0008-p4-crossing-execution-and-inference.md)

@@ -1,6 +1,6 @@
 # ADR-0008: P4 crossing, execution and inference semantics
 
-- Status: accepted for pilot; target sample size pending preregistered pilot amendment
+- Status: accepted; target completed with operational failure and inconclusive science
 - Date: 2026-08-11
 - Scope: `SIM-FIG4-PILOT-001` and the future `SIM-FIG4-002`
 
@@ -72,3 +72,12 @@ path, including diffusion crossings and jump overshoot. It does not claim an exa
 first-hit timestamp or recover the author's hidden simulator. Resolution refinement, omitted
 recrossing bounds and CPU/CUDA regression make those approximations visible rather than
 silently treating endpoint detection as exact.
+
+## Target outcome
+
+`SIM-FIG4-002/20260811T202753134457Z-837035232ead-det` completed in 34.244 seconds.
+All deterministic and numerical-budget gates passed except the preregistered all-cell
+minimum-interval floor: 38 far-right cells fell below 20, with minimum 12. Two inward-shift
+tests were supported, the high-gamma test was inconclusive, and the refinement family was
+inconclusive. The target is not rerun or extended; the canonical interpretation is recorded
+in [`paper-reproduction.md`](../reports/paper-reproduction.md).

@@ -6,7 +6,9 @@
 backtest относится к следующим этапам. Historical P3 gate не прошёл, после чего P3V
 заменил эвристические пороги на integrated estimators, sensitivity-informed margins и
 powered equivalence/superiority tests. Оба P3V run и глобальная Holm family поддержаны;
-переход к независимому Figure 4 experiment разрешён.
+независимый P4 target выполнен. P4 частично воспроизвёл Figure 4, но formal operational
+acceptance failed и общая scientific family осталась inconclusive; подробности в
+[`paper-reproduction.md`](docs/reports/paper-reproduction.md).
 
 ## Environment
 
@@ -92,8 +94,8 @@ processes, vectorised threshold/policy evaluation на CUDA через `torch.co
 основано на локальном transfer-inclusive benchmark; CPU reference остаётся обязательным
 regression oracle.
 
-Claim-eligible P4 config требует CUDA, использует 30 новых seeds и не допускает
-добавления runs после просмотра результата:
+Claim-eligible P4 config требует CUDA и использует 30 frozen seeds. Канонический target уже
+выполнен и не расширяется; команды ниже предназначены только для exact rerun:
 
 ```bash
 uv run ot-micromr validate-config cfg/experiments/sim_fig4_002.toml

@@ -18,7 +18,7 @@ written separately to `manifest.json` and never mutates the preregistered TOML.
 | `SIM-UNBALANCED-002` | `sim_unbalanced_002.toml` | Powered jump-compensator negative control | passed; global P3V supported |
 | `SIM-FIG4-PILOT-001` | `sim_fig4_pilot_001.toml` | Non-claim crossing, variance and compute pilot | failed before simulation: observation scheduler bug |
 | `SIM-FIG4-PILOT-002` | `sim_fig4_pilot_002.toml` | Replacement infrastructure pilot | completed; expected operational gate failure (25 < 100 intervals) |
-| `SIM-FIG4-002` | `sim_fig4_002.toml` | Powered independent Figure 4 reconstruction | preregistered; not run |
+| `SIM-FIG4-002` | `sim_fig4_002.toml` | Powered independent Figure 4 reconstruction | completed; operational acceptance failed; scientific inconclusive |
 
 The source paper does not disclose the primitive parameters, simulator, seeds or raw
 outputs used for Figure 4. Parameters in all three `SIM-*` configs are therefore
@@ -36,8 +36,8 @@ seeds/defaults are errors. New result-affecting values require a new config or a
 protocol amendment before the affected target output is inspected.
 
 The strict typed validator and runner support both `ANA-*` contracts plus both generations
-of `SIM-MOMENTS-*` and `SIM-UNBALANCED-*`. `SIM-FIG4-001` remains a preregistered P4
-input and is superseded by the planned `SIM-FIG4-002`. Existing failed
+of `SIM-MOMENTS-*`, `SIM-UNBALANCED-*` and `SIM-FIG4-*`. `SIM-FIG4-001` remains a legacy
+P4 input superseded by the completed `SIM-FIG4-002`. Existing failed
 run directories are immutable; any replacement requires a new experiment ID, justified
 statistical contract and dated amendment rather than editing these configs.
 
