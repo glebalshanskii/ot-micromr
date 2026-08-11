@@ -8,3 +8,35 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local research artifacts
+outputs/
+logs/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.log
+
+# Local datasets and private inputs
+data/
+datasets/
+*.parquet
+*.arrow
+*.feather
+
+# Secrets and local environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Notebook and tool caches
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/

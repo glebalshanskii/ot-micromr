@@ -1,0 +1,243 @@
+schema_version = "runspec-v1"
+experiment_id = "SIM-FIG4-001"
+track = "synthetic"
+mode = "paper-faithful"
+objective = "Independently reconstruct the Figure 4 band sweep under project-chosen primitives and preserve the missing-author-settings limitation."
+claim_ids = [
+  "PAPER-FIG4-INWARD-OPTIMUM",
+  "PAPER-FIG4-RATE-LOSS-AT-DAWSON",
+  "PAPER-FIG4-RATE-LOSS-AT-KRAMERS",
+]
+orders_enabled = true
+claim_eligible = true
+
+[seed_policy]
+rng_used = true
+rng_algorithm = "numpy.random.PCG64DXSM"
+seeds = [
+  2026081101, 2026081102, 2026081103, 2026081104, 2026081105,
+  2026081106, 2026081107, 2026081108, 2026081109, 2026081110,
+  2026081111, 2026081112, 2026081113, 2026081114, 2026081115,
+  2026081116, 2026081117, 2026081118, 2026081119, 2026081120,
+]
+mapping = "Use zero-based response_scale_index. SeedSequence([master_seed, response_scale_index, 0]) spawns brownian_increment, book_occurrence and book_channel. Each policy bridge uses the domain-separated SeedSequence([master_seed, response_scale_index, 1, policy_id]); grid policy_ids are 0..20 and theta_star is 21. Policies share only the endpoint/book skeleton, not a continuous bridge path."
+bootstrap_seed = 2026081199
+stream_mapping_version = "figure4_market_skeleton_policy_bridge_v1"
+
+[units]
+time = "second"
+price = "synthetic_price_unit"
+quantity = "lot"
+cash = "synthetic_quote_currency"
+timezone = "UTC"
+normalization = "alpha_varies_by_response_scale"
+
+[numerics]
+float_dtype = "float64"
+simulation_algorithm = "adaptive_left_hazard_single_jump_v1"
+alpha_ref_rule = "alpha_ref_per_second equals the current response_scale_alpha_per_second row"
+dawson_backend = "scipy.special.dawsn"
+erfi_backend = "scipy.special.erfi"
+root_algorithm = "scipy.optimize.brentq"
+root_lower_margin_ratio = 1.0e-12
+root_upper_u_ratio = 8.0
+root_xtol = 1.0e-13
+root_rtol = 1.0e-13
+root_max_iterations = 200
+primary_resolution_epsilon = 0.01
+refinement_epsilons = [0.02, 0.01, 0.005]
+max_time_step_rule = "dt_seconds <= epsilon / alpha_per_second"
+max_event_probability_rule = "1 - exp(-lambda_total_left * dt_seconds) <= epsilon"
+event_probability_formula = "1 - exp(-lambda_total_left * dt_seconds)"
+event_type_probability = "lambda_event_left / lambda_total_left"
+continuous_crossing_detection = "hybrid_flat_dyadic_tree_and_single_active_boundary_conditional_recursion_v1"
+crossing_time_approximation = "single-boundary conditioned bisection or flat-entry dyadic polyline, both to maximum leaf width epsilon times step"
+flat_entry_tree_depth_rule = "ceil(log2(1 / epsilon))"
+event_and_crossing_tie_break = "brownian_crossing_then_book_event_at_equal_timestamp"
+observation_boundary_handling = "During calibration, precompute the regular schedule; include next_observation_time - t in the adaptive-step minimum; record post-end-state snapshot without interpolation or RNG draws."
+invariant_suite_id = "jump_simulator_invariants_v1"
+diagnostic_quantile_probabilities = [0.0, 0.25, 0.5, 0.9, 0.95, 0.99, 1.0]
+
+[inputs]
+source_kind = "paper_model_project_parameters"
+paper_version = "arXiv:2608.00885v1"
+paper_pdf_sha256 = "fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba"
+protocol_path = "docs/protocols/synthetic/paper-reproduction.md"
+parameter_provenance = "Project-chosen normalized family; exact author primitives, seeds and simulator are unavailable."
+author_settings_status = "underdetermined"
+dataset = "not_applicable"
+dataset_reason = "The path is generated from the synthetic paper model."
+
+[model]
+enabled = true
+delta_price = 1.0
+sigma_x_price_per_sqrt_second = 0.5
+mu_s_per_second = 1.0
+mu_o_per_second = 0.01
+mu_c_per_second = 2.0
+alpha_o_fraction_of_alpha = 0.0
+alpha_s_fraction_of_alpha = 0.5
+alpha_c_fraction_of_alpha = 1.0
+response_scale_alpha_per_second_grid = [0.35, 0.5, 0.75, 1.0, 1.5, 2.0]
+balanced_response_rule = "alpha_s = 0.5 * alpha, alpha_o = 0, alpha_c = alpha"
+target_realized_gamma_ratios = [0.28, 0.36, 0.47]
+target_selection_rule = "Using only the epsilon=0.01 frozen pre-period calibration table, minimize absolute gamma distance separately for each target; exact ties choose the lower response-scale config index, duplicate selected rows are allowed, and every response-scale row remains reported."
+
+[model.initial_state]
+time_seconds = 0.0
+mid_half_ticks = 1
+efficient_price = 0.5
+inventory_lots = 0
+mid_marked_wealth_quote_currency = 0.0
+efficient_price_marked_wealth_quote_currency = 0.0
+state_representation = "mid_half_ticks_is_canonical; bid, spread, mid and gap are derived"
+derived_bid_price_assertion = 0.0
+derived_spread_price_assertion = 1.0
+derived_mid_price_assertion = 0.5
+derived_gap_price_assertion = 0.0
+
+[simulation]
+enabled = true
+burn_in_reversion_times = 200.0
+horizon_reversion_times = 2000.0
+horizon_role = "Measured interval after all pre-measurement stages."
+replications = 20
+calibration_preperiod_reversion_times = 100.0
+calibration_warmup_reversion_times = 50.0
+calibration_sampling_reversion_times = 50.0
+calibration_observation_interval_reversion_times = 0.01
+strategy_burn_in_reversion_times = 100.0
+pre_measurement_time_constraint = "burn_in = calibration_preperiod + strategy_burn_in = 200; calibration_preperiod = calibration_warmup + calibration_sampling = 100 reversion times"
+shared_market_skeleton_across_thresholds = true
+shared_continuous_bridge_path_across_thresholds = false
+event_log = false
+fill_log = true
+simultaneous_book_events_allowed = false
+strategy_monitoring_enabled = true
+strategy_activation = "After the 100-reversion-time calibration pre-period and row-level s_g freeze; every policy starts flat, runs for a further 100-reversion-time strategy burn-in, then begins measurement."
+
+[strategy]
+enabled = true
+policy = "symmetric_flip_band"
+initial_inventory_lots = 0
+first_entry_quantity_lots = 1
+subsequent_flip_quantity_lots = 2
+flat_between_thresholds = false
+threshold_half_spread_convention = "frozen_tight_book_reference_only"
+threshold_reference_phi_price = 0.5
+threshold_multiplier_theta_over_theta_d_grid = [
+  0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90,
+  0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.25,
+  1.30, 1.35, 1.40, 1.45, 1.50, 1.55, 1.60,
+]
+additional_thresholds = ["theta_star"]
+additional_threshold_deduplication_abs_tolerance_price = 1.0e-12
+policy_order = "Grid order shown above, followed by theta_star unless its physical price is within the declared deduplication tolerance of a grid policy; theta_d is the 1.00 grid policy and is not duplicated."
+
+[execution]
+enabled = true
+fill_convention = "post_state_move_at_displayed_touch"
+realized_half_spread_rule = "spread_price_at_fill / 2"
+contract_multiplier_quote_currency_per_price_lot = 1.0
+latency_seconds = 0.0
+fee_quote_currency_per_lot = 0.0
+slippage_price = 0.0
+market_impact_enabled = false
+partial_fills_enabled = false
+terminal_liquidation = false
+wealth_markings = ["mid_marked", "efficient_price_marked"]
+terminal_valuation = "Mark the open inventory to M_T and X_T; do not generate a liquidation fill."
+
+[evaluation]
+primary_metric = "discrete_grid_optimum_inward_shift_fraction"
+metrics = [
+  "row_level_calibration_s_g_price",
+  "row_level_realized_gamma_ratio",
+  "realized_spread_renewal_rate_by_threshold_multiplier",
+  "realized_rate_over_surrogate_optimum_by_threshold_multiplier",
+  "surrogate_rate_curve_by_threshold_multiplier",
+  "frozen_tight_cost_diagnostic_rate_by_threshold_multiplier",
+  "mid_marked_fixed_horizon_rate",
+  "efficient_price_marked_fixed_horizon_rate",
+  "wealth_marking_identity_abs_residual",
+  "discrete_grid_optimum_inward_shift_fraction",
+  "rate_loss_at_theta_d_fraction",
+  "rate_loss_at_theta_star_fraction",
+  "mean_interfill_time",
+  "mean_fill_overshoot",
+  "open_book_fill_fraction",
+  "invariant_violation_count",
+  "step_size_quantiles_seconds",
+  "lambda_total_right_times_step_quantiles",
+  "maximum_left_event_probability",
+  "event_step_fraction",
+  "bridge_only_crossing_count",
+  "flat_entry_tree_count",
+  "bridge_conditional_rejection_attempt_count",
+  "multiple_crossing_refinement_count",
+]
+aggregation = "Mean of seed-level renewal rates at each threshold; each master seed is one cluster containing the complete threshold vector."
+confidence_interval = "Student-t 95 percent only for each threshold mean rate; percentile seed-cluster bootstrap for peak and rate-loss functionals."
+paper_plot_band = "plus_or_minus_one_standard_error_across_seeds"
+multiplicity = "all_response_scales_and_thresholds_reported; no cell selection for claim"
+calibration_estimator = "For each response row, discard the first 50 reversion times; pool equal-spaced G samples from the next 50 reversion times across all 20 seed skeletons; s_g is the square root of the pooled population second central moment."
+calibration_freeze_rule = "Write and hash one row-level s_g/gamma/theta_d/theta_star table before strategy activation or any P&L evaluation; every seed and policy in the row uses that same table."
+primary_rate_estimator = "After strategy burn-in, the first measured fill is the left boundary only. Across all later complete inter-fill intervals ending before the horizon, sum 2 * (abs(gap_at_fill) - spread_at_fill / 2) and divide by last_fill_time - first_fill_time."
+surrogate_optimum_rate_formula = "alpha_per_second * s_g_price * sqrt(2 / pi) * exp(-u_d_ratio_squared / 2)"
+surrogate_rate_formula = "alpha_per_second * s_g_price * (2 / pi) * (u_ratio - gamma_ratio) / erfi(u_ratio / sqrt(2))"
+frozen_cost_diagnostic_rate_estimator = "Use the same eligible fills and denominator as primary_rate_estimator but replace spread_at_fill / 2 by threshold_reference_phi_price."
+fixed_horizon_ledger_rate = "Wealth change from measurement start to horizon divided by measured seconds, with open inventory terminal-marked and no liquidation; this is a secondary accounting cross-check."
+discrete_peak_rule = "Argmax of the across-seed mean primary-rate curve on the fixed multiplier grid; exact ties choose the lowest config policy index and all tied cells are reported."
+rate_loss_rule = "One minus the seed-mean rate at the named threshold divided by the maximum seed-mean grid rate; never mean seed-level loss ratios."
+peak_bootstrap_rule = "Resample the 20 complete seed rate vectors with replacement, recompute the mean curve, discrete argmax, inward shift and both ratio-of-means losses in each bootstrap replicate; report percentile 95 percent intervals."
+diagnostic_peak_rule = "Unweighted quadratic OLS on the mean-rate discrete peak and two grid neighbors on each side; not_available at an edge, for nonnegative curvature, or when the vertex lies outside those five cells."
+bootstrap_replications = 10000
+
+[evaluation.refinement_subset]
+response_scale_selection = "all rows selected for target realized gamma display"
+target_row_selection_freeze = "Select row indices using epsilon=0.01 calibration gamma and retain those indices at epsilon=0.005."
+thresholds = "Full multiplier grid plus theta_star, using physical threshold prices frozen from the epsilon=0.01 calibration table."
+compare_epsilons = [0.01, 0.005]
+refinement_metrics = [
+  "s_g_price_relative_difference",
+  "primary_rate_over_alpha_s_g_at_each_fixed_threshold",
+  "discrete_grid_optimum_inward_shift_fraction",
+  "rate_loss_at_theta_d_fraction",
+  "rate_loss_at_theta_star_fraction",
+]
+refinement_rate_normalization = "For both epsilon values divide rates by alpha_per_second * s_g_price from the frozen epsilon=0.01 calibration table; never by recalibrated epsilon=0.005 s_g."
+resolution_difference_se = "sqrt(se_epsilon_0_01_squared + se_epsilon_0_005_squared); equal seed labels are not treated as paired."
+
+[acceptance]
+require_all_20_replications = true
+require_all_response_scale_rows_reported = true
+require_all_threshold_grid_rows_reported = true
+refinement_each_metric_abs_difference_max = 0.01
+refinement_threshold_may_be_replaced_by_difference_se = true
+refinement_difference_se_rule = "sqrt(se_epsilon_0_01_squared + se_epsilon_0_005_squared)"
+minimum_complete_interfill_intervals_per_seed_and_policy = 100
+invariant_violation_count_max = 0
+wealth_marking_identity_abs_residual_max = 1.0e-10
+dawson_root_abs_residual_max = 1.0e-10
+author_numeric_match_required = false
+result_label = "independent_partial_reproduction"
+require_clean_tree_for_claim = true
+stop_on_invariant_violation = true
+stop_on_nonfinite_value = true
+
+[artifacts]
+output_root = "outputs"
+required_classes = [
+  "source_config",
+  "resolved_runspec",
+  "manifest",
+  "log",
+  "metrics_summary",
+  "metrics_raw",
+  "table",
+  "figure_data",
+  "figure",
+  "calibration_table",
+  "fill_log",
+]
+optional_classes = ["event_log"]

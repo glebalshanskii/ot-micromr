@@ -1,0 +1,152 @@
+schema_version = "runspec-v1"
+experiment_id = "ANA-FIG3-001"
+track = "synthetic"
+mode = "paper-faithful"
+objective = "Reproduce Figure 3 from the closed-form OU surrogate without fitted parameters."
+claim_ids = [
+  "PAPER-FIG3-THRESHOLDS",
+  "PAPER-FIG3-RATE-CURVES",
+  "PAPER-3.7-KRAMERS-ROOT",
+  "PAPER-B.1-DAWSON-OPTIMUM",
+]
+orders_enabled = false
+claim_eligible = true
+
+[seed_policy]
+rng_used = false
+rng_algorithm = "none"
+seeds = [20260811]
+mapping = "The retained seed satisfies the common RunSpec contract but no stochastic operation is permitted."
+
+[units]
+time = "second"
+price = "synthetic_price_unit"
+quantity = "lot"
+cash = "synthetic_quote_currency"
+timezone = "UTC"
+normalization = "ou_dimensionless"
+
+[numerics]
+float_dtype = "float64"
+dawson_backend = "scipy.special.dawsn"
+erfi_backend = "scipy.special.erfi"
+root_algorithm = "scipy.optimize.brentq"
+root_lower_margin_ratio = 1.0e-12
+root_upper_u_ratio = 8.0
+root_xtol = 1.0e-13
+root_rtol = 1.0e-13
+root_max_iterations = 200
+optimizer_crosscheck_algorithm = "scipy.optimize.minimize_scalar:bounded"
+optimizer_xatol = 1.0e-12
+
+[inputs]
+source_kind = "paper"
+paper_version = "arXiv:2608.00885v1"
+paper_pdf_sha256 = "fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba"
+protocol_path = "docs/protocols/synthetic/paper-reproduction.md"
+dataset = "not_applicable"
+dataset_reason = "Figure 3 is generated from deterministic closed forms."
+
+[model]
+enabled = true
+alpha_per_second = 1.0
+s_g_price = 1.0
+phi_rule = "phi_price = gamma_ratio * s_g_price"
+
+[simulation]
+enabled = false
+reason = "Figure 3 is an analytical surrogate figure."
+
+[strategy]
+enabled = false
+reason = "Rate curves are evaluated analytically; no orders are generated."
+
+[execution]
+enabled = false
+reason = "No orders or fills exist in an analytical run."
+
+[evaluation]
+primary_metric = "maximum_rate_loss_fraction_for_gamma_ge_0_4"
+metrics = [
+  "u_d_ratio",
+  "u_star_ratio",
+  "threshold_relative_difference",
+  "rate_loss_at_u_star_fraction",
+  "normalized_rate_curve",
+  "dawson_root_abs_residual",
+]
+aggregation = "deterministic_parameter_grid"
+confidence_interval = "not_applicable"
+confidence_interval_reason = "The calculation is deterministic."
+multiplicity = "complete_preregistered_grid_reported"
+
+[evaluation.gamma_grid]
+start_ratio = 0.05
+stop_ratio = 3.0
+step_ratio = 0.01
+include_stop = true
+
+[evaluation.rate_curve_grid]
+gamma_ratios = [0.25, 0.5, 1.0]
+u_start_at_gamma = true
+u_stop_ratio = 3.0
+u_step_ratio = 0.005
+myopic_points = true
+
+[[evaluation.reference_checkpoints]]
+gamma_ratio = 0.05
+u_d_ratio = 0.5416928365
+u_star_ratio = 1.0253124512
+rate_loss_at_u_star_fraction = 0.0871240388
+
+[[evaluation.reference_checkpoints]]
+gamma_ratio = 0.28
+u_d_ratio = 1.0065633048
+u_star_ratio = 1.1497524449
+rate_loss_at_u_star_fraction = 0.0129152662
+
+[[evaluation.reference_checkpoints]]
+gamma_ratio = 0.4
+u_d_ratio = 1.1558728538
+u_star_ratio = 1.2198039027
+rate_loss_at_u_star_fraction = 0.0030007967
+
+[[evaluation.reference_checkpoints]]
+gamma_ratio = 1.7
+u_d_ratio = 2.2649755449
+u_star_ratio = 2.1624404748
+rate_loss_at_u_star_fraction = 0.0229956694
+
+[evaluation.reference_grid_summary]
+domain_gamma_min_ratio = 0.4
+domain_gamma_max_ratio = 3.0
+domain_gamma_step_ratio = 0.01
+maximum_rate_loss_at_u_star_fraction = 0.0230357036
+argmax_gamma_ratio = 1.66
+provenance = "Independent numerical evaluation of the closed forms; verify rather than emit as output."
+
+[acceptance]
+dawson_root_abs_residual_max = 1.0e-10
+checkpoint_u_abs_error_max = 5.0e-9
+checkpoint_rate_loss_abs_error_max = 5.0e-8
+reference_grid_max_rate_loss_abs_error_max = 5.0e-8
+reference_grid_argmax_gamma_abs_error_max = 5.0e-12
+myopic_rate_abs_max = 1.0e-12
+require_all_grid_rows_finite = true
+require_clean_tree_for_claim = true
+stop_on_nonfinite_value = true
+
+[artifacts]
+output_root = "outputs"
+required_classes = [
+  "source_config",
+  "resolved_runspec",
+  "manifest",
+  "log",
+  "metrics_summary",
+  "metrics_raw",
+  "table",
+  "figure_data",
+  "figure",
+]
+optional_classes = []
