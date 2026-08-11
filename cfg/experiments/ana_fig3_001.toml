@@ -37,7 +37,10 @@ root_xtol = 1.0e-13
 root_rtol = 1.0e-13
 root_max_iterations = 200
 optimizer_crosscheck_algorithm = "scipy.optimize.minimize_scalar:bounded"
+optimizer_lower_margin_ratio = 1.0e-9
+optimizer_upper_u_ratio = 8.0
 optimizer_xatol = 1.0e-12
+optimizer_max_iterations = 500
 
 [inputs]
 source_kind = "paper"
