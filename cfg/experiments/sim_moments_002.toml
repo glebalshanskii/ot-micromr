@@ -17,7 +17,6 @@ seeds = [
   2026082116, 2026082117, 2026082118, 2026082119, 2026082120,
 ]
 mapping = "One seed per independent replication; SeedSequence.spawn creates brownian_increment, book_occurrence, book_channel and brownian_bridge streams."
-bootstrap_seed = 2026082199
 stream_mapping_version = "single_policy_seedsequence_spawn_v1"
 
 [units]
@@ -44,7 +43,6 @@ flat_entry_tree_depth_rule = "not_applicable"
 event_and_crossing_tie_break = "brownian_crossing_then_book_event_at_equal_timestamp"
 observation_boundary_handling = "Include the next observation boundary in the adaptive-step minimum and record the post-end-state snapshot."
 invariant_suite_id = "jump_simulator_invariants_v1"
-diagnostic_quantile_probabilities = [0.0, 0.25, 0.5, 0.9, 0.95, 0.99, 1.0]
 
 [inputs]
 source_kind = "paper_model_project_parameters"
@@ -86,8 +84,6 @@ enabled = true
 burn_in_reversion_times = 100.0
 horizon_reversion_times = 40000.0
 replications = 20
-event_log = false
-step_diagnostics = false
 observation_interval_reversion_times = 0.01
 simultaneous_book_events_allowed = false
 strategy_monitoring_enabled = false
@@ -117,7 +113,6 @@ metrics = [
 aggregation = "Compute seed-level estimands first and give every independent seed equal weight."
 confidence_interval = "Student-t compatibility intervals and TOST equivalence intervals across seed-level estimates."
 multiplicity = "Joint Holm correction across the three P3V primary components; refinement is a separate Holm family."
-bootstrap_replications = 10000
 sampling_rule = "Equal-spaced post-burn-in samples; nominal hazards integrate frozen-left rates over accepted steps."
 integrated_hazard_flow_estimator = "2 * (A_close - A_open) / (A_close + A_open) within each seed."
 compensator_estimator = "For each channel, N_j - A_j and its variance-stabilised value (N_j - A_j) / sqrt(A_j)."
@@ -125,9 +120,7 @@ finite_h_drift_estimator = "Within seed and left parity, OLS through origin of (
 finite_h_drift_target_per_second = "(exp(-alpha_per_second * h_seconds) - 1) / h_seconds"
 generator_drift_check = "At every accepted left state, the nominal jump generator plus alpha times gap vanishes."
 acf_estimator = "Within-seed sample autocovariance about the seed mean divided by lag-zero variance."
-drift_gap_bin_edges_s_g = [-3.0, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 3.0]
 acf_lags_reversion_times = [0.25, 0.5, 1.0, 2.0, 3.0, 5.0]
-minimum_pooled_observations_per_drift_bin_and_parity = 1000
 minimum_observations_per_seed_and_parity_for_slope = 200
 primary_family = ["flow_equivalence"]
 refinement_family = ["flow_equivalence"]
@@ -135,23 +128,14 @@ familywise_alpha = 0.05
 power_target = 0.90
 
 [acceptance]
-parity_violation_count_max = 0
-illegal_transition_count_max = 0
-negative_intensity_count_max = 0
-nonzero_inactive_intensity_count_max = 0
-invariant_violation_count_max = 0
-nonfinite_value_count_max = 0
-multiple_book_event_step_count_max = 0
 deterministic_replay_mismatch_count_max = 0
 generator_drift_abs_residual_max = 1.0e-12
 flow_equivalence_margin = 0.05
 refinement_flow_equivalence_margin = 0.05
 require_all_replications = true
 require_clean_tree_for_claim = true
-stop_on_invariant_violation = true
-stop_on_nonfinite_value = true
 
 [artifacts]
 output_root = "outputs"
-required_classes = ["source_config", "resolved_runspec", "manifest", "log", "metrics_summary", "metrics_raw", "table", "figure_data", "figure", "event_log"]
+required_classes = ["source_config", "resolved_runspec", "manifest", "log", "metrics_summary", "metrics_raw", "table", "figure_data", "figure"]
 optional_classes = []

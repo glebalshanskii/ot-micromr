@@ -120,7 +120,7 @@ def main() -> int:
             "control_summary": str(args.control_summary),
         },
         "next_step": (
-            "implement_and_preregister_SIM-FIG4-002"
+            "P3V_complete_follow_docs_plan"
             if p3v_passed
             else "keep_P4_blocked_and_do_not_append_seeds"
         ),

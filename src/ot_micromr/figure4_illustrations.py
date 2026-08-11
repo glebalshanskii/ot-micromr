@@ -108,29 +108,25 @@ def _render_figure5(
         tight_threshold,
         open_threshold,
     )
-    inventory = np.zeros(time.size, dtype=np.int8)
-    cash = 0.0
-    position = 0
-    fills: set[int] = set()
-    for index in range(time.size):
-        desired = -1 if gap[index] >= threshold[index] else 1 if gap[index] <= -threshold[index] else position
-        if desired != position:
-            delta_q = desired - position
-            touch = mid[index] + spread[index] / 2.0 if delta_q > 0 else mid[index] - spread[index] / 2.0
-            cash -= delta_q * touch
-            position = desired
-            fills.add(index)
-        inventory[index] = position
-    cash_path = np.zeros(time.size, dtype=np.float64)
-    cash = 0.0
-    previous = 0
-    for index, position in enumerate(inventory):
-        if int(position) != previous:
-            delta_q = int(position) - previous
-            touch = mid[index] + spread[index] / 2.0 if delta_q > 0 else mid[index] - spread[index] / 2.0
-            cash -= delta_q * touch
-            previous = int(position)
-        cash_path[index] = cash
+    signals = np.where(gap >= threshold, -1, np.where(gap <= -threshold, 1, 0)).astype(
+        np.int8
+    )
+    signal_indices = np.where(signals != 0, np.arange(time.size), -1)
+    latest_signal_indices = np.maximum.accumulate(signal_indices)
+    inventory = np.where(
+        latest_signal_indices >= 0,
+        signals[np.maximum(latest_signal_indices, 0)],
+        0,
+    ).astype(np.int8)
+    inventory_changes = np.diff(np.concatenate((np.zeros(1, dtype=np.int8), inventory)))
+    fill_indices = np.flatnonzero(inventory_changes)
+    fills = set(int(index) for index in fill_indices)
+    touches = np.where(
+        inventory_changes > 0,
+        mid + spread / 2.0,
+        mid - spread / 2.0,
+    )
+    cash_path = np.cumsum(-inventory_changes * touches)
     mid_wealth = cash_path + inventory * mid
     efficient_wealth = cash_path + inventory * efficient
     baseline = mid_wealth[0] + calibration.surrogate_optimum_rate_per_second * (time - time[0])
@@ -164,7 +160,6 @@ def _render_figure5(
     axes[0].plot(time[indices], gap[indices], linewidth=0.8, label=r"gap $G$")
     axes[0].plot(time[indices], threshold[indices], linestyle="--", linewidth=0.8, label=r"$+\theta_D(S)$")
     axes[0].plot(time[indices], -threshold[indices], linestyle="--", linewidth=0.8, label=r"$-\theta_D(S)$")
-    fill_indices = np.asarray(sorted(fills), dtype=np.int64)
     if fill_indices.size:
         axes[0].scatter(time[fill_indices], gap[fill_indices], s=10, color="black", label="fills")
     axes[0].set(ylabel="gap", title="Figure 5 parity-dependent band illustration")

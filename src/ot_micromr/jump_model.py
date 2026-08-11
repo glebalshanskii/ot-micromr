@@ -85,24 +85,6 @@ class BookState:
         return self.mid_price(parameters) - self.spread_price(parameters) / 2.0
 
 
-@dataclass(frozen=True, slots=True)
-class BookEventRecord:
-    epsilon: float
-    seed: int
-    event_index: int
-    time_seconds: float
-    channel: str
-    left_gap_price: float
-    pre_event_gap_price: float
-    post_event_gap_price: float
-    pre_mid_half_ticks: int
-    post_mid_half_ticks: int
-    efficient_price: float
-    delta_mid_price: float
-    left_channel_intensity_per_second: float
-    measured: bool
-
-
 def initial_state(model: Mapping[str, Any]) -> BookState:
     initial = model["initial_state"]
     return BookState(

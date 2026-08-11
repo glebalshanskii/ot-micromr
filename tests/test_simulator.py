@@ -9,7 +9,7 @@ from ot_micromr.simulator import SimulationSettings, named_streams, simulate_rep
 class SimulatorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.spec = load_runspec("cfg/experiments/sim_moments_001.toml")
+        cls.spec = load_runspec("cfg/experiments/sim_moments_002.toml")
         cls.values = cls.spec.to_dict()
         cls.values["model"]["mu_o_per_second"] = 2.0
         cls.settings = SimulationSettings(
@@ -17,7 +17,6 @@ class SimulatorTests(unittest.TestCase):
             horizon_seconds=1.0,
             observation_interval_seconds=0.01,
             alpha_ref_per_second=1.0,
-            diagnostic_quantiles=(0.0, 0.5, 1.0),
             acf_lags_seconds=(0.05, 0.1),
             minimum_slope_observations=1,
         )
@@ -33,42 +32,12 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(result.tight.shape, (101,))
         self.assertTrue(np.all(np.isfinite(result.gaps)))
         self.assertLessEqual(result.seed_metrics["maximum_left_event_probability"], 0.01 + 2e-15)
-        self.assertEqual(result.seed_metrics["invariant_violation_count"], 0)
         self.assertLessEqual(result.seed_metrics["generator_drift_abs_residual_tight"], 1e-12)
         self.assertLessEqual(result.seed_metrics["generator_drift_abs_residual_open"], 1e-12)
-        self.assertIsNone(result.seed_metrics["bridge_only_crossing_count"])
         self.assertFalse(result.seed_metrics["deterministic_replay_checked"])
         self.assertLessEqual(abs(result.seed_metrics["transition_count_imbalance"]), 1)
         self.assertIn("integrated_hazard_flow_signed_relative_residual", result.seed_metrics)
         self.assertIn("compensator_z_open_up", result.seed_metrics)
-
-    def test_event_log_can_be_disabled_without_changing_path(self) -> None:
-        recorded = simulate_replication(
-            self.values,
-            epsilon=0.01,
-            seed=2026081105,
-            settings=self.settings,
-        )
-        unrecorded_settings = SimulationSettings(
-            burn_seconds=self.settings.burn_seconds,
-            horizon_seconds=self.settings.horizon_seconds,
-            observation_interval_seconds=self.settings.observation_interval_seconds,
-            alpha_ref_per_second=self.settings.alpha_ref_per_second,
-            diagnostic_quantiles=self.settings.diagnostic_quantiles,
-            acf_lags_seconds=self.settings.acf_lags_seconds,
-            minimum_slope_observations=self.settings.minimum_slope_observations,
-            record_events=False,
-        )
-        unrecorded = simulate_replication(
-            self.values,
-            epsilon=0.01,
-            seed=2026081105,
-            settings=unrecorded_settings,
-        )
-        self.assertEqual(recorded.replay_digest, unrecorded.replay_digest)
-        self.assertGreater(len(recorded.events), 0)
-        self.assertEqual(unrecorded.events, ())
-        np.testing.assert_array_equal(recorded.gaps, unrecorded.gaps)
 
     def test_bitwise_replay_is_deterministic(self) -> None:
         first = simulate_replication(self.values, 0.01, 2026081102, settings=self.settings)

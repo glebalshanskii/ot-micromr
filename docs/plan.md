@@ -1,12 +1,12 @@
 # План воспроизведения Optimal Trading of Microstructure Mean Reversion
 
-> **Обновлено:** 2026-08-11
+> **Обновлено:** 2026-08-12
 >
-> **Ветка:** `feat/p4-figure4-reproduction`
+> **Ветка:** `refactor/current-experiments-only`
 >
-> **Текущий статус:** P4 completed; corrected operational validity passed; scientific family inconclusive
+> **Текущий статус:** P4 completed; active implementation cleanup reviewed; clean P4 regression rerun pending
 >
-> **Следующий шаг:** P5 licensed event-level data feasibility и frozen universe/split
+> **Следующий шаг:** clean current-code `SIM-FIG4-002` regression rerun, затем P5 data feasibility
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -389,6 +389,7 @@ source TOML после запуска не переписывается под �
 | P3S. Statistical gate audit | Common | **completed** | Gates classified; TOST/superiority/multiplicity/power policy accepted |
 | P3V. Margin sensitivity и powered validation | Synthetic | **completed; supported** | SESOI bounded by downstream distortion; new independent confirmatory runs passed |
 | P4. Figures 2/4/5 и paper report | Synthetic | **completed** | Partial reproduction; corrected operational validity passed; scientific family inconclusive |
+| P4C. Current implementation cleanup | Synthetic | **in progress** | One active implementation per experiment; tests pass; clean P4 regression rerun pending |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
 | P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
@@ -693,8 +694,25 @@ commit `5c60e490f02b6036d28160df94cce634aee23280`; review artifact SHA-256
 `f88615979b4b5c905ec541f715ff4ca6f938f66bf9f1f70c9fa2c3224ffd4466`.
 Полный evidence report: [`paper-reproduction.md`](reports/paper-reproduction.md).
 
-Следующий шаг — P5: выбрать licensed event-level source и до просмотра P&L заморозить
-universe, eligibility и chronological split. P4 target не перезапускается.
+Следующий шаг после cleanup regression — P5: выбрать licensed event-level source и до
+просмотра P&L заморозить universe, eligibility и chronological split.
+
+### P4C. Current implementation cleanup — in progress
+
+После merge PR #7 выполнен полный review активного executable surface. По
+[`ADR-0010`](adr/0010-current-experiment-surface.md) удалены P3 v1 configs/aggregators,
+Figure 4 legacy/pilot configs, scalar policy engine, post-hoc acceptance reviewer,
+fault-injection/benchmark scripts и неиспользуемые coverage/step/binned diagnostics.
+
+Оставлены только пять текущих configs и один implementation path на experiment. Corrected
+P4 operational validity теперь входит непосредственно в runner. Дополнительно удалён
+log-dependent event fraction, исправлены точная фаза non-flat gate и фактическое применение
+bridge probability cutoff. Полный review:
+[`code-review-current-surface.md`](reports/code-review-current-surface.md).
+
+До завершения P4C требуется clean commit и один regression rerun `SIM-FIG4-002`. Его цель —
+подтвердить отсутствие изменения scientific conclusion после удаления unreachable code;
+параметры, seeds и статистические правила не подбираются повторно.
 
 ### P5. Data feasibility, licensing и frozen universe
 
@@ -886,21 +904,20 @@ Profitability gate:
 - дать итог один из: `profitable-under-stated-conditions`, `not-confirmed`,
   `negative`, `data-blocked`, без усиления формулировки.
 
-## 6. Начальная experiment matrix
+## 6. Current experiment matrix
 
-P1 configs зарегистрированы как strict TOML contracts; будущие имена остаются planned
-до своих protocol stages. Разные information-set modes не агрегируются без явной
-колонки `mode`.
+Active configs зарегистрированы как strict TOML contracts; будущие имена остаются planned
+до своих protocol stages. Historical executable variants удалены по
+[`ADR-0010`](adr/0010-current-experiment-surface.md); их commits, ADRs и reports сохраняют
+provenance. Разные information-set modes не агрегируются без явной колонки `mode`.
 
 | Experiment ID | Config | Claim/output | Status |
 |---|---|---|---|
 | `ANA-SMOKE-001` | `cfg/experiments/ana_smoke_001.toml` | One config, Dawson residual, one metric | passed; `20260811T170052058822Z-290ea5809cb6-det` |
 | `ANA-FIG3-001` | `cfg/experiments/ana_fig3_001.toml` | Surrogate thresholds/rate curves | reproduced; `20260811T170104389894Z-4c1014e843c6-det` |
-| `SIM-MOMENTS-001` | `cfg/experiments/sim_moments_001.toml` | Parity, drift, variance, ACF, occupancy | acceptance failed; `20260811T172240473272Z-060cfab011c3-det` |
-| `SIM-UNBALANCED-001` | `cfg/experiments/sim_unbalanced_001.toml` | One-factor parity-drift negative control | acceptance failed; `20260811T172916459381Z-5497c39af2dd-det` |
-| `SIM-FIG4-001` | `cfg/experiments/sim_fig4_001.toml` | Jump versus surrogate band sweep | blocked by P3; not run; underdetermined-author-settings |
-| `SIM-FIG4-PILOT-002` | `cfg/experiments/sim_fig4_pilot_002.toml` | Crossing/variance/compute pilot | completed; non-claim; operational floor expectedly missed |
-| `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | completed; acceptance failed; science inconclusive; `20260811T202753134457Z-837035232ead-det` |
+| `SIM-MOMENTS-002` | `cfg/experiments/sim_moments_002.toml` | Integrated flow and balanced generator | passed; global P3V supported |
+| `SIM-UNBALANCED-002` | `cfg/experiments/sim_unbalanced_002.toml` | One-factor jump-compensator control | passed; global P3V supported |
+| `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | clean current-code rerun pending; prior science inconclusive |
 | `SIM-FIG5-001` | integrated into `SIM-FIG4-002` artifacts | Strategy path, fills, wealth identities | completed illustrative artifact |
 | `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | Eligibility, quality, split freeze | pending-data-source |
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Oracle/causal filter diagnostics | pending |

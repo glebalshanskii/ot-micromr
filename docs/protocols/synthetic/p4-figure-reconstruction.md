@@ -203,3 +203,26 @@ The corrected review is computed from the frozen raw CSV/JSON evidence by
 `ot-micromr review-p4-acceptance`. All corrected operational gates pass. The original runner
 artifact remains immutable and is explicitly marked as superseded on operational acceptance;
 the scientific family remains `inconclusive`.
+
+## 10. Implementation-surface amendment, 2026-08-12
+
+After PR #7 was merged, [`ADR-0010`](../../adr/0010-current-experiment-surface.md) removed
+superseded executable variants. This is an implementation/provenance cleanup, not a change to
+the Figure 4 scientific estimands, seed family, thresholds, model, bootstrap or multiplicity
+rules.
+
+For the current executable contract:
+
+- corrected operational validity is evaluated directly by `SIM-FIG4-002`; the separate review
+  command and the invalid all-cell count floor are no longer part of the active code;
+- the unused frozen-half-spread counterfactual is not computed;
+- non-flat initialization is checked explicitly at measurement start;
+- probabilities below the declared bridge cutoff are actually omitted and their total bound is
+  checked;
+- the unused empty fill/event-log placeholders are not emitted; strategy aggregates and Figure 5
+  path data remain in their declared metric/figure artifacts;
+- only the CPU `float64` market plus compiled CUDA `float32` crossing implementation remains.
+
+The historical target and review artifacts remain valid evidence under their cited commits.
+A clean current-code rerun is required for the new direct-run manifest and acceptance status;
+scientific conclusions are compared as a regression, not retuned.

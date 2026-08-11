@@ -30,7 +30,7 @@ class ExperimentTests(unittest.TestCase):
 
     def test_figure4_artifact_inventory_is_independent_of_p3_figure_name(self) -> None:
         spec = load_runspec(
-            REPOSITORY_ROOT / "cfg" / "experiments" / "sim_fig4_pilot_001.toml"
+            REPOSITORY_ROOT / "cfg" / "experiments" / "sim_fig4_002.toml"
         )
         with tempfile.TemporaryDirectory() as temporary_directory:
             present = _required_artifacts_present(spec, Path(temporary_directory))

@@ -1,6 +1,6 @@
 # ADR-0009: Correct P4 operational acceptance
 
-- Status: accepted; supersedes the interval-floor part of ADR-0008
+- Status: accepted; supersedes the interval-floor part of ADR-0008; active implementation integrated by ADR-0010
 - Date: 2026-08-11
 - Scope: interpretation of `SIM-FIG4-002` and future fixed-horizon rate experiments
 
@@ -47,3 +47,10 @@ For `SIM-FIG4-002`, all corrected operational gates pass. The scientific result 
 two inward-shift rows are supported, the high-gamma row is inconclusive and the six-test numerical
 refinement family is inconclusive. The canonical stage status is therefore
 `completed / operational validity passed / scientific inconclusive`.
+
+## Implementation note, 2026-08-12
+
+[`ADR-0010`](0010-current-experiment-surface.md) integrates this corrected decision directly
+into the only active `SIM-FIG4-002` runner and removes the historical post-hoc command and
+coverage-floor code. The original run/review artifacts remain immutable evidence under their
+cited commits; current runs no longer require a second interpretation step.

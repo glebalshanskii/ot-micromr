@@ -395,9 +395,9 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
         ],
         "figure": [run_directory / "figures" / "figure3.png"],
     }
-    if spec.experiment_id.startswith(("SIM-MOMENTS-", "SIM-UNBALANCED-")):
+    if spec.experiment_id in {"SIM-MOMENTS-002", "SIM-UNBALANCED-002"}:
         figure_name = (
-            "sim-moments.png" if spec.experiment_id.startswith("SIM-MOMENTS-") else "sim-unbalanced.png"
+            "sim-moments.png" if spec.experiment_id == "SIM-MOMENTS-002" else "sim-unbalanced.png"
         )
         paths_by_class.update(
             {
@@ -405,15 +405,14 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                 "table": [run_directory / "tables" / "resolution_summary.csv"],
                 "figure_data": [run_directory / "figures" / "simulation-data.csv"],
                 "figure": [run_directory / "figures" / figure_name],
-                "event_log": [run_directory / "records" / "book_events.csv"],
             }
         )
-    if spec.experiment_id.startswith("SIM-FIG4-"):
+    if spec.experiment_id == "SIM-FIG4-002":
         paths_by_class.update(
             {
                 "metrics_raw": [
                     run_directory / "metrics" / "seed_threshold_metrics.csv",
-                    run_directory / "metrics" / "path_diagnostics.csv",
+                    run_directory / "metrics" / "replication_metrics.csv",
                 ],
                 "table": [
                     run_directory / "tables" / "curve_summary.csv",
@@ -430,7 +429,6 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                     run_directory / "figures" / "figure5.png",
                 ],
                 "calibration_table": [run_directory / "tables" / "calibration.csv"],
-                "fill_log": [run_directory / "records" / "fills.csv"],
             }
         )
     result: dict[str, bool] = {}
@@ -511,9 +509,9 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_smoke(spec)
         elif spec.experiment_id == "ANA-FIG3-001":
             evaluation = evaluate_fig3(spec, run_directory)
-        elif spec.experiment_id.startswith(("SIM-MOMENTS-", "SIM-UNBALANCED-")):
+        elif spec.experiment_id in {"SIM-MOMENTS-002", "SIM-UNBALANCED-002"}:
             evaluation = evaluate_simulation(spec, run_directory)
-        elif spec.experiment_id.startswith("SIM-FIG4-"):
+        elif spec.experiment_id == "SIM-FIG4-002":
             evaluation = evaluate_figure4(spec, run_directory)
         else:
             raise ExperimentError(f"experiment runner is not implemented: {spec.experiment_id}")
@@ -559,12 +557,12 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
         )
         atomic_write_json(run_directory / "metrics" / "summary.json", summary)
 
-    is_figure4 = spec.experiment_id.startswith("SIM-FIG4-")
+    is_figure4 = spec.experiment_id == "SIM-FIG4-002"
     numerics_manifest = (
         {
             "market_float_dtype": spec.values["numerics"]["market_float_dtype"],
             "reduction_float_dtype": spec.values["numerics"]["reduction_float_dtype"],
-            "device": "cpu_adaptive_market_plus_torch_compile_cuda_crossings_and_reduction",
+            "device": "cpu_float64_adaptive_market_plus_torch_compile_cuda_float32_crossings",
             "known_nondeterministic_kernels": [],
         }
         if is_figure4
