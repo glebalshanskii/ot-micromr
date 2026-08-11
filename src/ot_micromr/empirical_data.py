@@ -738,7 +738,7 @@ def evaluate_empirical_data(spec: RunSpec, run_directory: Path) -> EmpiricalEval
             "start_utc": str(inputs[f"{name}_start_utc"]),
             "end_utc": str(inputs[f"{name}_end_utc"]),
             "calendar_days": int(inputs[f"{name}_calendar_days"]),
-            "p5_payload_inspected": name == "train",
+            "p5_sample_payload_inspected": name == "train",
         }
         for name in ("train", "validation", "test")
     ]

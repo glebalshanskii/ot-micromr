@@ -1,0 +1,126 @@
+schema_version = "runspec-v1"
+experiment_id = "EMP-DATA-001"
+track = "empirical"
+mode = "practical-local"
+objective = "Verify the frozen OKX BTC archives, classify large-tick eligibility and freeze chronological splits without strategy P&L."
+claim_ids = ["P5-OKX-DATA-FEASIBILITY", "P5-BTC-LARGE-TICK-ELIGIBILITY"]
+orders_enabled = false
+claim_eligible = true
+
+[seed_policy]
+rng_used = true
+rng_algorithm = "torch.Generator:CPU"
+seeds = [2026081201]
+mapping = "The sole seed generates 10000 UTC-day cluster-bootstrap index matrices; no market observation is simulated."
+
+[units]
+time = "millisecond"
+price = "USDT"
+quantity = "contract_or_base_asset_by_instrument"
+cash = "USDT"
+timezone = "UTC"
+normalization = "raw_exchange_units_with_exact_integer_price_ticks"
+
+[numerics]
+compute_backend = "torch"
+compute_device = "cpu"
+float_dtype = "float64"
+price_tick_dtype = "int64"
+size_dtype = "float64"
+json_parser = "orjson"
+archive_parallelism = "process_per_archive"
+audit_workers = 10
+torch_threads_per_worker = 1
+batch_rows = 65536
+book_reconstruction = "daily_snapshot_then_source_order_deltas"
+
+[inputs]
+source_kind = "okx_official_historical_archives"
+venue = "OKX"
+dataset = "okx-btc-p5-audit-2024-v1"
+dataset_version = "v1"
+dataset_sha256 = "9221a32d43c253004f027067f7f4543969bc59b2891ea443c59e9ceb50ac0ecd"
+raw_manifest_path = "data/okx/emp_data_001/raw_manifest.json"
+source_spec_path = "cfg/experiments/emp_data_001_sources.toml"
+source_spec_sha256 = "31489757eb7729c5e5f27efa652647f2f5a7daf42123e3e1274f23a2d20a9633"
+source_catalog_url = "https://www.okx.com/historical-data"
+protocol_path = "docs/protocols/empirical/p5-okx-data-feasibility.md"
+execution_instrument = "BTC-USDT-SWAP"
+reference_instrument = "BTC-USDT"
+train_start_utc = "2024-01-01T00:00:00.000Z"
+train_end_utc = "2024-12-31T23:59:59.999Z"
+train_calendar_days = 366
+validation_start_utc = "2025-01-01T00:00:00.000Z"
+validation_end_utc = "2025-06-30T23:59:59.999Z"
+validation_calendar_days = 181
+test_start_utc = "2025-07-01T00:00:00.000Z"
+test_end_utc = "2025-12-31T23:59:59.999Z"
+test_calendar_days = 184
+
+[model]
+enabled = false
+reason = "P5 audits data and does not fit the paper model or an efficient-price estimator."
+
+[simulation]
+enabled = false
+reason = "All observations come from frozen OKX archives."
+
+[strategy]
+enabled = false
+reason = "Strategy signals, thresholds, orders and P&L are forbidden during P5."
+
+[execution]
+enabled = false
+reason = "P5 checks whether touch and depth are reconstructible but does not simulate fills."
+
+[evaluation]
+primary_metric = "swap_one_two_tick_day_cluster_lower_95"
+metrics = [
+  "raw_size_and_sha256",
+  "orderbook_endpoint_and_state_quality",
+  "trade_ordering_and_value_quality",
+  "funding_train_coverage",
+  "swap_one_two_tick_equal_day_mean",
+  "swap_one_two_tick_day_cluster_lower_95",
+  "same_venue_spot_swap_overlap",
+]
+aggregation = "Reconstruct each archive independently, compute complete UTC-day metrics, then give seven swap days equal weight."
+confidence_interval = "One-sided percentile cluster bootstrap over complete UTC-day fractions; rows inside a day are never treated as independent."
+bootstrap_replications = 10000
+familywise_alpha = 0.05
+price_tick = 0.1
+audit_dates = [
+  "2024-01-15",
+  "2024-03-15",
+  "2024-05-15",
+  "2024-07-15",
+  "2024-09-15",
+  "2024-11-15",
+  "2024-12-15",
+]
+spot_alignment_dates = ["2024-01-15", "2024-07-15", "2024-12-15"]
+endpoint_tolerance_ms = 100
+funding_maximum_gap_ms = 28800000
+funding_expected_first_timestamp_ms = 1704067200000
+funding_expected_last_timestamp_ms = 1735660800000
+
+[acceptance]
+minimum_large_tick_lower_bound = 0.99
+expected_asset_count = 32
+expected_orderbook_days = 10
+expected_trade_days = 10
+require_clean_tree_for_claim = true
+stop_on_nonfinite_value = true
+
+[artifacts]
+output_root = "outputs"
+required_classes = [
+  "source_config",
+  "resolved_runspec",
+  "manifest",
+  "log",
+  "metrics_summary",
+  "metrics_raw",
+  "table",
+]
+optional_classes = []
