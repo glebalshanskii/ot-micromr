@@ -100,6 +100,7 @@ audit_dates = [
 ]
 spot_alignment_dates = ["2024-01-15", "2024-07-15", "2024-12-15"]
 endpoint_tolerance_ms = 100
+maximum_initial_snapshot_delay_ms = 60100
 funding_maximum_gap_ms = 28800000
 funding_expected_first_timestamp_ms = 1704067200000
 funding_expected_last_timestamp_ms = 1735660800000

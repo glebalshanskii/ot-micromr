@@ -203,9 +203,14 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
     }
     snapshot_rows = 0
     update_rows = 0
+    pre_snapshot_update_rows = 0
     first_action: str | None = None
     first_timestamp: int | None = None
+    first_snapshot_timestamp: int | None = None
     last_timestamp: int | None = None
+    previous_source_timestamp: int | None = None
+    source_duplicate_timestamp_rows = 0
+    source_nonmonotone_timestamp_rows = 0
     previous_timestamp: int | None = None
     previous_bid: int | None = None
     previous_ask: int | None = None
@@ -274,18 +279,33 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
                     if first_timestamp is None:
                         first_timestamp = timestamp
                     last_timestamp = timestamp
+                    if previous_source_timestamp is not None:
+                        source_duplicate_timestamp_rows += int(
+                            timestamp == previous_source_timestamp
+                        )
+                        source_nonmonotone_timestamp_rows += int(
+                            timestamp < previous_source_timestamp
+                        )
+                    previous_source_timestamp = timestamp
                     if action == "snapshot":
                         snapshot_rows += 1
+                        if first_snapshot_timestamp is None:
+                            first_snapshot_timestamp = timestamp
                         asks.clear()
                         bids.clear()
                         ask_heap.clear()
                         bid_heap.clear()
                     else:
                         update_rows += 1
-                        if not asks or not bids:
-                            raise ValueError("update encountered before a usable snapshot")
+                        if first_snapshot_timestamp is None:
+                            pre_snapshot_update_rows += 1
                     _apply_levels(ask_levels, asks, ask_heap, 1, tick_scale)
                     _apply_levels(bid_levels, bids, bid_heap, -1, tick_scale)
+                    if first_snapshot_timestamp is None:
+                        # A daily archive can start inside the source's native snapshot
+                        # cycle.  Validate the prefix, but never treat partial deltas as
+                        # a reconstructible book.  The first complete snapshot clears it.
+                        continue
                     if action == "snapshot":
                         ask_heap[:] = list(asks)
                         bid_heap[:] = [-price for price in bids]
@@ -319,6 +339,8 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
     flush()
     if first_timestamp is None or last_timestamp is None:
         raise ExperimentError(f"empty order-book archive: {path}")
+    if first_snapshot_timestamp is None:
+        raise ExperimentError(f"order-book archive contains no usable snapshot: {path}")
     valid_rows = int(accumulator["valid_book_rows"])
     support_rows = int(accumulator["one_tick_rows"]) + int(accumulator["two_tick_rows"])
     day_start = _utc_day_start_milliseconds(date_text)
@@ -330,15 +352,19 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
         "instrument": instrument,
         "date": date_text,
         "rows": int(accumulator["rows"]),
+        "source_rows": int(accumulator["rows"]) + pre_snapshot_update_rows,
         "snapshot_rows": snapshot_rows,
         "update_rows": update_rows,
+        "pre_snapshot_update_rows": pre_snapshot_update_rows,
         "first_action": first_action,
         "first_timestamp_ms": first_timestamp,
+        "first_snapshot_timestamp_ms": first_snapshot_timestamp,
         "last_timestamp_ms": last_timestamp,
         "start_coverage_lag_ms": first_timestamp - day_start,
+        "usable_start_coverage_lag_ms": first_snapshot_timestamp - day_start,
         "end_coverage_lag_ms": day_end - last_timestamp,
-        "duplicate_timestamp_rows": int(accumulator["duplicate_timestamp_rows"]),
-        "nonmonotone_timestamp_rows": int(accumulator["nonmonotone_timestamp_rows"]),
+        "duplicate_timestamp_rows": source_duplicate_timestamp_rows,
+        "nonmonotone_timestamp_rows": source_nonmonotone_timestamp_rows,
         "maximum_timestamp_gap_ms": int(accumulator["maximum_timestamp_gap_ms"]),
         "valid_book_rows": valid_rows,
         "empty_book_rows": int(accumulator["empty_book_rows"]),
@@ -750,10 +776,15 @@ def evaluate_empirical_data(spec: RunSpec, run_directory: Path) -> EmpiricalEval
     atomic_write_json(run_directory / "metrics" / "bootstrap.json", bootstrap)
 
     endpoint_tolerance = int(evaluation["endpoint_tolerance_ms"])
+    maximum_initial_snapshot_delay = int(
+        evaluation["maximum_initial_snapshot_delay_ms"]
+    )
     orderbook_structural_pass = all(
-        row["first_action"] == "snapshot"
-        and row["nonmonotone_timestamp_rows"] == 0
+        row["nonmonotone_timestamp_rows"] == 0
         and abs(int(row["start_coverage_lag_ms"])) <= endpoint_tolerance
+        and -endpoint_tolerance
+        <= int(row["usable_start_coverage_lag_ms"])
+        <= maximum_initial_snapshot_delay
         and abs(int(row["end_coverage_lag_ms"])) <= endpoint_tolerance
         and row["empty_book_rows"] == 0
         and row["locked_rows"] == 0
@@ -772,12 +803,18 @@ def evaluate_empirical_data(spec: RunSpec, run_directory: Path) -> EmpiricalEval
         for row in orderbook_rows
         if row["instrument"] == "BTC-USDT"
         and abs(int(row["start_coverage_lag_ms"])) <= endpoint_tolerance
+        and -endpoint_tolerance
+        <= int(row["usable_start_coverage_lag_ms"])
+        <= maximum_initial_snapshot_delay
         and abs(int(row["end_coverage_lag_ms"])) <= endpoint_tolerance
     }
     swap_dates = {
         str(row["date"])
         for row in swap_book_rows
         if abs(int(row["start_coverage_lag_ms"])) <= endpoint_tolerance
+        and -endpoint_tolerance
+        <= int(row["usable_start_coverage_lag_ms"])
+        <= maximum_initial_snapshot_delay
         and abs(int(row["end_coverage_lag_ms"])) <= endpoint_tolerance
     }
     expected_spot_dates = set(str(value) for value in evaluation["spot_alignment_dates"])
@@ -818,6 +855,10 @@ def evaluate_empirical_data(spec: RunSpec, run_directory: Path) -> EmpiricalEval
         "swap_orderbook_days": len(swap_book_rows),
         "spot_orderbook_days": len(orderbook_rows) - len(swap_book_rows),
         "orderbook_rows": total_l2_rows,
+        "orderbook_source_rows": sum(int(row["source_rows"]) for row in orderbook_rows),
+        "pre_snapshot_update_rows": sum(
+            int(row["pre_snapshot_update_rows"]) for row in orderbook_rows
+        ),
         "trade_rows": total_trade_rows,
         "funding_unique_train_rows": funding_summary["unique_train_rows"],
         "swap_one_two_tick_equal_day_mean": bootstrap["equal_weight_day_mean"],

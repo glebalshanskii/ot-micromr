@@ -1569,6 +1569,7 @@ def _validate_empirical_common(data: Mapping[str, Any]) -> None:
         "audit_dates",
         "spot_alignment_dates",
         "endpoint_tolerance_ms",
+        "maximum_initial_snapshot_delay_ms",
         "funding_maximum_gap_ms",
         "funding_expected_first_timestamp_ms",
         "funding_expected_last_timestamp_ms",
@@ -1605,11 +1606,16 @@ def _validate_empirical_common(data: Mapping[str, Any]) -> None:
         raise ConfigError("RunSpec.evaluation.spot_alignment_dates: unexpected freeze")
     for key in (
         "endpoint_tolerance_ms",
+        "maximum_initial_snapshot_delay_ms",
         "funding_maximum_gap_ms",
         "funding_expected_first_timestamp_ms",
         "funding_expected_last_timestamp_ms",
     ):
         _integer(evaluation, key, "RunSpec.evaluation", positive=True)
+    if int(evaluation["maximum_initial_snapshot_delay_ms"]) != 60_100:
+        raise ConfigError(
+            "RunSpec.evaluation.maximum_initial_snapshot_delay_ms: expected 60100"
+        )
 
     acceptance = _table(data, "acceptance")
     _expect_keys(

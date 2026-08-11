@@ -144,3 +144,23 @@ sequence. Любой failed gate остаётся отрицательным P5 
 - `tables/funding_quality.csv` and `tables/split_freeze.csv`;
 - `metrics/bootstrap.json` and `metrics/summary.json`;
 - `docs/reports/p5-okx-data-feasibility.md` after the clean target run.
+
+## Amendment 2026-08-12: native snapshot warmup
+
+Первый clean target run остановился до scientific metrics: один из десяти L2 archives
+начался внутри нативного 60-second snapshot cycle. Наблюдение, materiality analysis и
+изменение gate зафиксированы в [`ADR-0012`](../../adr/0012-p5-native-snapshot-warmup.md).
+Исходный failed run и исходные правила выше остаются historical record.
+
+Для всех последующих `EMP-DATA-001` runs пункты 2 и 6 acceptance rules заменяются так:
+
+- source coverage всё ещё обязана начинаться/заканчиваться в пределах 100 ms от UTC day;
+- unusable `update` prefix до первого полного snapshot проверяется, но исключается из book
+  estimands;
+- первый usable snapshot обязан появиться не позже `60,100 ms` после UTC midnight;
+- nondecreasing source order и ноль empty/locked/crossed observations проверяются на всей
+  reconstructible suffix;
+- spot/swap overlap начинается с более позднего из двух первых usable snapshots; обе стороны
+  обязаны удовлетворять тому же `60,100 ms` warmup gate.
+
+Large-tick threshold, bootstrap, dates, instruments и все остальные gates не изменены.

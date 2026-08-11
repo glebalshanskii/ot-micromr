@@ -76,6 +76,51 @@ class EmpiricalDataAuditTests(unittest.TestCase):
         self.assertEqual(result["locked_rows"], 0)
         self.assertEqual(result["crossed_rows"], 0)
 
+    def test_orderbook_ignores_unusable_prefix_until_first_snapshot(self) -> None:
+        records = [
+            {
+                "instId": "BTC-USDT-SWAP",
+                "action": "update",
+                "ts": "1705276800001",
+                "asks": [["101.0", "1.0", "1"]],
+                "bids": [["99.0", "1.0", "1"]],
+            },
+            {
+                "instId": "BTC-USDT-SWAP",
+                "action": "snapshot",
+                "ts": "1705276860000",
+                "asks": [["100.1", "2.0", "1"]],
+                "bids": [["100.0", "3.0", "1"]],
+            },
+        ]
+        payload = b"".join(
+            json.dumps(record, separators=(",", ":")).encode("utf-8") + b"\n"
+            for record in records
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "book.tar.gz"
+            with tarfile.open(path, "w:gz") as archive:
+                info = tarfile.TarInfo("book.data")
+                info.size = len(payload)
+                archive.addfile(info, io.BytesIO(payload))
+            result = _audit_orderbook_worker(
+                {
+                    "path": str(path),
+                    "asset_id": "book",
+                    "instrument_type": "SWAP",
+                    "instrument": "BTC-USDT-SWAP",
+                    "date": "2024-01-15",
+                    "tick_scale": 10,
+                    "batch_rows": 2,
+                }
+            )
+        self.assertEqual(result["first_action"], "update")
+        self.assertEqual(result["pre_snapshot_update_rows"], 1)
+        self.assertEqual(result["source_rows"], 2)
+        self.assertEqual(result["rows"], 1)
+        self.assertEqual(result["one_tick_rows"], 1)
+        self.assertEqual(result["usable_start_coverage_lag_ms"], 60_000)
+
     def test_tiny_trades_validate_ordering_and_values(self) -> None:
         rows = [
             ["BTC-USDT-SWAP", "10", "buy", "100.0", "2.0", "1705276800001"],
