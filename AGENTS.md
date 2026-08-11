@@ -96,7 +96,7 @@ Agreed behavior, scope, research assumptions и experimental protocols фикс�
 
 ## Структура репозитория
 
-- `src/` — исходный код, `src/ot-micromr/` — основной Python-пакет;
+- `src/` — исходный код, `src/ot_micromr/` — основной importable Python-пакет;
 - `docs/` — основные source-of-truth документы и структурированные
   `adr/`, `protocols/`, `reports/`, `papers/`;
 - `cfg/` — configs запусков, моделей, данных и eval;

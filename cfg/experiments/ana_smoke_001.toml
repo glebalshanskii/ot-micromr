@@ -1,0 +1,97 @@
+schema_version = "runspec-v1"
+experiment_id = "ANA-SMOKE-001"
+track = "synthetic"
+mode = "paper-faithful"
+objective = "Validate one Dawson optimum and its primary first-order-condition residual."
+claim_ids = ["PAPER-B.1-DAWSON-OPTIMUM"]
+orders_enabled = false
+claim_eligible = false
+
+[seed_policy]
+rng_used = false
+rng_algorithm = "none"
+seeds = [20260811]
+mapping = "The retained seed satisfies the common RunSpec contract but no stochastic operation is permitted."
+
+[units]
+time = "second"
+price = "synthetic_price_unit"
+quantity = "lot"
+cash = "synthetic_quote_currency"
+timezone = "UTC"
+normalization = "ou_dimensionless"
+
+[numerics]
+float_dtype = "float64"
+dawson_backend = "scipy.special.dawsn"
+erfi_backend = "scipy.special.erfi"
+root_algorithm = "scipy.optimize.brentq"
+root_lower_margin_ratio = 1.0e-12
+root_upper_u_ratio = 8.0
+root_xtol = 1.0e-13
+root_rtol = 1.0e-13
+root_max_iterations = 200
+optimizer_crosscheck_algorithm = "scipy.optimize.minimize_scalar:bounded"
+optimizer_lower_margin_ratio = 1.0e-9
+optimizer_upper_u_ratio = 8.0
+optimizer_xatol = 1.0e-12
+
+[inputs]
+source_kind = "paper"
+paper_version = "arXiv:2608.00885v1"
+paper_pdf_sha256 = "fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba"
+protocol_path = "docs/protocols/synthetic/paper-reproduction.md"
+dataset = "not_applicable"
+dataset_reason = "Deterministic analytical smoke run."
+
+[model]
+enabled = true
+alpha_per_second = 1.0
+s_g_price = 1.0
+gamma_ratio = 0.4
+phi_price = 0.4
+constraint = "phi_price == gamma_ratio * s_g_price"
+
+[simulation]
+enabled = false
+reason = "Analytical smoke run; no path simulation is allowed."
+
+[strategy]
+enabled = false
+reason = "The run evaluates the surrogate objective, not an order-generating policy."
+
+[execution]
+enabled = false
+reason = "No orders or fills exist in an analytical run."
+
+[evaluation]
+primary_metric = "dawson_root_abs_residual"
+metrics = [
+  "dawson_root_abs_residual",
+  "root_vs_direct_optimizer_abs_error",
+  "optimum_rate_identity_abs_error",
+]
+aggregation = "single_deterministic_evaluation"
+confidence_interval = "not_applicable"
+confidence_interval_reason = "The calculation is deterministic."
+multiplicity = "not_applicable"
+multiplicity_reason = "Exactly one preregistered primary value is evaluated."
+
+[acceptance]
+dawson_root_abs_residual_max = 1.0e-10
+root_vs_direct_optimizer_abs_error_max = 1.0e-7
+optimum_rate_identity_abs_error_max = 1.0e-10
+require_u_d_strictly_greater_than_gamma = true
+require_clean_tree_for_claim = false
+stop_on_nonfinite_value = true
+
+[artifacts]
+output_root = "outputs"
+required_classes = [
+  "source_config",
+  "resolved_runspec",
+  "manifest",
+  "log",
+  "metrics_summary",
+]
+optional_classes = []
