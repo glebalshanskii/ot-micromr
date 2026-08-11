@@ -206,6 +206,109 @@ archive_format = "zip_csv"
 expected_size_bytes = 3464479
 url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20241215/BTC-USDT-trades-2024-12-15.zip?v=999"
 
+# Trade archives use UTC+8 calendar cuts.  Each following-day asset supplies
+# the final eight hours of the corresponding frozen UTC audit day.
+
+[[assets]]
+asset_id = "swap-trades-2024-01-16"
+kind = "trades"
+instrument_type = "SWAP"
+instrument = "BTC-USDT-SWAP"
+date = "2024-01-16"
+archive_format = "zip_csv"
+expected_size_bytes = 5590202
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20240116/BTC-USDT-SWAP-trades-2024-01-16.zip?v=999"
+
+[[assets]]
+asset_id = "swap-trades-2024-03-16"
+kind = "trades"
+instrument_type = "SWAP"
+instrument = "BTC-USDT-SWAP"
+date = "2024-03-16"
+archive_format = "zip_csv"
+expected_size_bytes = 9550938
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20240316/BTC-USDT-SWAP-trades-2024-03-16.zip?v=999"
+
+[[assets]]
+asset_id = "swap-trades-2024-05-16"
+kind = "trades"
+instrument_type = "SWAP"
+instrument = "BTC-USDT-SWAP"
+date = "2024-05-16"
+archive_format = "zip_csv"
+expected_size_bytes = 9329771
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20240516/BTC-USDT-SWAP-trades-2024-05-16.zip?v=999"
+
+[[assets]]
+asset_id = "swap-trades-2024-07-16"
+kind = "trades"
+instrument_type = "SWAP"
+instrument = "BTC-USDT-SWAP"
+date = "2024-07-16"
+archive_format = "zip_csv"
+expected_size_bytes = 13955014
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20240716/BTC-USDT-SWAP-trades-2024-07-16.zip?v=999"
+
+[[assets]]
+asset_id = "swap-trades-2024-09-16"
+kind = "trades"
+instrument_type = "SWAP"
+instrument = "BTC-USDT-SWAP"
+date = "2024-09-16"
+archive_format = "zip_csv"
+expected_size_bytes = 9467921
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20240916/BTC-USDT-SWAP-trades-2024-09-16.zip?v=999"
+
+[[assets]]
+asset_id = "swap-trades-2024-11-16"
+kind = "trades"
+instrument_type = "SWAP"
+instrument = "BTC-USDT-SWAP"
+date = "2024-11-16"
+archive_format = "zip_csv"
+expected_size_bytes = 10679377
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20241116/BTC-USDT-SWAP-trades-2024-11-16.zip?v=999"
+
+[[assets]]
+asset_id = "swap-trades-2024-12-16"
+kind = "trades"
+instrument_type = "SWAP"
+instrument = "BTC-USDT-SWAP"
+date = "2024-12-16"
+archive_format = "zip_csv"
+expected_size_bytes = 13474573
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20241216/BTC-USDT-SWAP-trades-2024-12-16.zip?v=999"
+
+[[assets]]
+asset_id = "spot-trades-2024-01-16"
+kind = "trades"
+instrument_type = "SPOT"
+instrument = "BTC-USDT"
+date = "2024-01-16"
+archive_format = "zip_csv"
+expected_size_bytes = 3481514
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20240116/BTC-USDT-trades-2024-01-16.zip?v=999"
+
+[[assets]]
+asset_id = "spot-trades-2024-07-16"
+kind = "trades"
+instrument_type = "SPOT"
+instrument = "BTC-USDT"
+date = "2024-07-16"
+archive_format = "zip_csv"
+expected_size_bytes = 4697940
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20240716/BTC-USDT-trades-2024-07-16.zip?v=999"
+
+[[assets]]
+asset_id = "spot-trades-2024-12-16"
+kind = "trades"
+instrument_type = "SPOT"
+instrument = "BTC-USDT"
+date = "2024-12-16"
+archive_format = "zip_csv"
+expected_size_bytes = 6777431
+url = "https://static.okx.com/cdn/okex/traderecords/trades/daily/20241216/BTC-USDT-trades-2024-12-16.zip?v=999"
+
 [[assets]]
 asset_id = "funding-2024-01"
 kind = "funding"

@@ -164,3 +164,25 @@ sequence. Любой failed gate остаётся отрицательным P5 
   обязаны удовлетворять тому же `60,100 ms` warmup gate.
 
 Large-tick threshold, bootstrap, dates, instruments и все остальные gates не изменены.
+
+## Amendment 2026-08-12: book health mask and UTC trade coverage
+
+Второй clean run сохранил полные metrics и выявил повреждённый L2 interval, UTC+8 cut у
+trade archives и неверный expected funding endpoint. Evidence и причинное правило обработки
+зафиксированы в [`ADR-0013`](../../adr/0013-p5-health-mask-and-trade-calendar.md).
+
+Для последующих `EMP-DATA-001` runs действуют дополнительные правила:
+
+- impossible book включает quarantine до следующего полного valid snapshot; quarantined
+  rows не входят в book estimands, но elapsed calendar time сохраняется как downtime;
+- structural pass относится к downstream-valid observations и требует recovery всех
+  quarantine episodes; raw faults сохраняются отдельными metrics;
+- для каждого UTC audit day `D` загружаются trade archives `D` и `D+1`, потому что source
+  archive cut равен UTC+8; каждый raw timestamp проверяется относительно этого cut;
+- соседние trade archives сохраняют timestamp/trade-ID order, а последующая empirical
+  pipeline обязана merge/filter exact UTC day до построения features;
+- expected funding endpoint исправлен на последний scheduled timestamp внутри frozen train:
+  `2024-12-31 16:00:00 UTC`.
+
+Порог large-tick, bootstrap family, instruments и даты не изменены. Validation/test payloads
+по-прежнему не читаются.
