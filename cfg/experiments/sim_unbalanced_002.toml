@@ -1,0 +1,144 @@
+schema_version = "runspec-v1"
+experiment_id = "SIM-UNBALANCED-002"
+track = "synthetic"
+mode = "paper-faithful"
+objective = "Powered one-factor negative control for the realised finite-h parity drift split."
+claim_ids = ["CONTROL-UNBALANCED-PARITY-SPLIT"]
+orders_enabled = false
+claim_eligible = true
+
+[seed_policy]
+rng_used = true
+rng_algorithm = "numpy.random.PCG64DXSM"
+seeds = [
+  2026082101, 2026082102, 2026082103, 2026082104, 2026082105,
+  2026082106, 2026082107, 2026082108, 2026082109, 2026082110,
+  2026082111, 2026082112, 2026082113, 2026082114, 2026082115,
+  2026082116, 2026082117, 2026082118, 2026082119, 2026082120,
+]
+mapping = "One seed per independent replication; the same labels as SIM-MOMENTS-002 provide common random numbers, not extra observations."
+bootstrap_seed = 2026082199
+stream_mapping_version = "single_policy_seedsequence_spawn_v1"
+
+[units]
+time = "second"
+price = "synthetic_price_unit"
+quantity = "lot"
+cash = "synthetic_quote_currency"
+timezone = "UTC"
+normalization = "tight_response_alpha_equals_one_unbalanced_control"
+
+[numerics]
+float_dtype = "float64"
+simulation_algorithm = "adaptive_left_hazard_single_jump_v1"
+alpha_ref_per_second = 1.25
+primary_resolution_epsilon = 0.01
+refinement_epsilons = [0.01, 0.005]
+max_time_step_rule = "dt_seconds <= epsilon / alpha_ref_per_second"
+max_event_probability_rule = "1 - exp(-lambda_total_left * dt_seconds) <= epsilon"
+event_probability_formula = "1 - exp(-lambda_total_left * dt_seconds)"
+event_type_probability = "lambda_event_left / lambda_total_left"
+continuous_crossing_detection = "dormant because strategy_monitoring is disabled"
+crossing_time_approximation = "not_applicable"
+flat_entry_tree_depth_rule = "not_applicable"
+event_and_crossing_tie_break = "brownian_crossing_then_book_event_at_equal_timestamp"
+observation_boundary_handling = "Include the next observation boundary in the adaptive-step minimum and record the post-end-state snapshot."
+invariant_suite_id = "jump_simulator_invariants_v1"
+diagnostic_quantile_probabilities = [0.0, 0.25, 0.5, 0.9, 0.95, 0.99, 1.0]
+
+[inputs]
+source_kind = "paper_model_project_parameters"
+paper_version = "arXiv:2608.00885v1"
+paper_pdf_sha256 = "fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba"
+protocol_path = "docs/protocols/synthetic/p3v-powered-validation.md"
+parameter_provenance = "One-factor control: alpha_c alone changes from 1.0 to 1.25."
+experiment_role = "extension_negative_control"
+base_experiment_id = "SIM-MOMENTS-002"
+dataset = "not_applicable"
+dataset_reason = "The path is generated from the synthetic paper model."
+
+[model]
+enabled = true
+delta_price = 1.0
+sigma_x_price_per_sqrt_second = 0.5
+mu_s_per_second = 1.0
+mu_o_per_second = 0.01
+mu_c_per_second = 2.0
+alpha_s_per_second = 0.5
+alpha_o_per_second = 0.0
+alpha_c_per_second = 1.25
+tight_drift_coefficient_per_second = 1.0
+open_drift_coefficient_per_second = 1.25
+one_factor_change = "alpha_c_per_second: 1.0 -> 1.25; every other primitive matches SIM-MOMENTS-002"
+
+[model.initial_state]
+time_seconds = 0.0
+mid_half_ticks = 1
+efficient_price = 0.5
+inventory_lots = 0
+mid_marked_wealth_quote_currency = 0.0
+efficient_price_marked_wealth_quote_currency = 0.0
+state_representation = "mid_half_ticks_is_canonical; bid, spread, mid and gap are derived"
+derived_bid_price_assertion = 0.0
+derived_spread_price_assertion = 1.0
+derived_mid_price_assertion = 0.5
+derived_gap_price_assertion = 0.0
+
+[simulation]
+enabled = true
+burn_in_reversion_times = 100.0
+horizon_reversion_times = 20000.0
+reference_reversion_rate_per_second = 1.0
+replications = 20
+event_log = false
+observation_interval_reversion_times = 0.01
+simultaneous_book_events_allowed = false
+strategy_monitoring_enabled = false
+cpu_workers = 10
+deterministic_replay_seeds = [2026082101, 2026082102, 2026082103]
+
+[strategy]
+enabled = false
+reason = "This is a dynamics negative control; no strategy orders are generated."
+
+[execution]
+enabled = false
+reason = "No strategy orders are generated."
+
+[evaluation]
+primary_metric = "realised_jump_parity_drift_contrast_superiority"
+metrics = ["invariant_violation_count", "generator_drift_slope_by_parity", "realised_jump_drift_slope_by_parity", "realised_jump_parity_contrast", "finite_h_drift_diagnostic", "open_occupancy"]
+aggregation = "Compute the finite-h contrast within seed, then give each seed equal weight."
+confidence_interval = "One-sided Student-t superiority and paired TOST refinement intervals for jump-compensator seed estimates."
+multiplicity = "The primary p-value joins the three-component P3V Holm family; refinement is a separate Holm family."
+sampling_rule = "Equal-spaced post-burn-in observations; left-state parity defines the sample."
+generator_drift_estimator = "Within parity, OLS through origin of nominal generator drift on gap."
+finite_h_drift_estimator = "Within seed and left parity, OLS through origin of (G[t+h]-G[t])/h on G[t]."
+finite_h_contrast = "Primary is jump-compensator beta_tight - beta_open; finite-h contrast is retained as a diagnostic."
+minimum_observations_per_seed_and_parity_for_slope = 200
+primary_family = ["unbalanced_contrast_superiority"]
+refinement_family = ["contrast_equivalence"]
+familywise_alpha = 0.05
+power_target = 0.90
+
+[acceptance]
+parity_violation_count_max = 0
+illegal_transition_count_max = 0
+negative_intensity_count_max = 0
+nonzero_inactive_intensity_count_max = 0
+invariant_violation_count_max = 0
+nonfinite_value_count_max = 0
+multiple_book_event_step_count_max = 0
+deterministic_replay_mismatch_count_max = 0
+generator_drift_abs_residual_max = 1.0e-12
+contrast_minimum_effect_per_second = 0.10
+refinement_contrast_equivalence_margin_per_second = 0.15
+require_all_replications = true
+require_clean_tree_for_claim = true
+stop_on_invariant_violation = true
+stop_on_nonfinite_value = true
+
+[artifacts]
+output_root = "outputs"
+required_classes = ["source_config", "resolved_runspec", "manifest", "log", "metrics_summary", "metrics_raw", "table", "figure_data", "figure", "event_log"]
+optional_classes = []

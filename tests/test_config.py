@@ -70,7 +70,12 @@ class RunSpecTests(unittest.TestCase):
             validate_runspec(data)
 
     def test_p3_simulation_contracts_validate(self) -> None:
-        for name in ("sim_moments_001.toml", "sim_unbalanced_001.toml"):
+        for name in (
+            "sim_moments_001.toml",
+            "sim_unbalanced_001.toml",
+            "sim_moments_002.toml",
+            "sim_unbalanced_002.toml",
+        ):
             with self.subTest(name=name):
                 validate_runspec(load_data(name))
 

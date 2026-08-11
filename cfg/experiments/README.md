@@ -14,6 +14,8 @@ written separately to `manifest.json` and never mutates the preregistered TOML.
 | `SIM-MOMENTS-001` | `sim_moments_001.toml` | Jump-model invariants and stationary theorem checks | historical P3 acceptance failed; immutable |
 | `SIM-UNBALANCED-001` | `sim_unbalanced_001.toml` | One-factor parity-drift negative control | historical P3 acceptance failed; immutable |
 | `SIM-FIG4-001` | `sim_fig4_001.toml` | Legacy independent partial Figure 4 contract | blocked and superseded before run |
+| `SIM-MOMENTS-002` | `sim_moments_002.toml` | Powered integrated-flow and exact-generator validation | preregistered; not run |
+| `SIM-UNBALANCED-002` | `sim_unbalanced_002.toml` | Powered jump-compensator negative control | preregistered; not run |
 
 The source paper does not disclose the primitive parameters, simulator, seeds or raw
 outputs used for Figure 4. Parameters in all three `SIM-*` configs are therefore
@@ -30,8 +32,8 @@ Missing or unknown fields, non-finite floats, scientific CLI overrides and impli
 seeds/defaults are errors. New result-affecting values require a new config or a dated
 protocol amendment before the affected target output is inspected.
 
-The strict typed validator and runner support both `ANA-*` contracts plus
-`SIM-MOMENTS-001` and `SIM-UNBALANCED-001`. `SIM-FIG4-001` remains a preregistered P4
+The strict typed validator and runner support both `ANA-*` contracts plus both generations
+of `SIM-MOMENTS-*` and `SIM-UNBALANCED-*`. `SIM-FIG4-001` remains a preregistered P4
 input and is rejected as not executable while P3 gates are unresolved. Existing failed
 run directories are immutable; any replacement requires a new experiment ID, justified
 statistical contract and dated amendment rather than editing these configs.
@@ -49,6 +51,6 @@ independent unit, familywise alpha/correction, target power and three-way decisi
 Equality uses equivalence tests; superiority uses one-sided inference over a minimum
 effect; refinement uses paired or independent equivalence and never `tolerance OR SE`.
 
-Reference statistical primitives live in `ot_micromr.statistical_gates`. No `*002`
-config is registered yet: first the project must determine margins from Figure 4
-downstream sensitivity and select horizon/seed count from a power/compute analysis.
+Reference statistical primitives live in `ot_micromr.statistical_gates`. The `*002`
+contracts follow the dated sensitivity amendment in the P3V protocol; their global Holm
+decision is evaluated only after both immutable target runs exist.

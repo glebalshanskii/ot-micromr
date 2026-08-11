@@ -4,7 +4,7 @@
 >
 > **Ветка:** `docs/statistical-gate-framework`
 >
-> **Текущий статус:** P3 выполнен и inconclusive; post-run audit заменил heuristic gates для future runs
+> **Текущий статус:** P3V выполняется по замороженному sensitivity/power protocol; P4 остаётся заблокирован
 >
 > **Следующий шаг:** downstream gate-margin sensitivity и power/compute design; P4 заблокирован
 
@@ -387,7 +387,7 @@ source TOML после запуска не переписывается под �
 | P2. Analytical executable baseline | Synthetic | **completed** | Closed forms, tests, smoke run и Figure 3 reproduction |
 | P3. Jump simulator и theorem checks | Synthetic | **completed; gate failed** | Invariants прошли; flow/control precision gates не прошли |
 | P3S. Statistical gate audit | Common | **completed** | Gates classified; TOST/superiority/multiplicity/power policy accepted |
-| P3V. Margin sensitivity и powered validation | Synthetic | pending | SESOI derived from downstream distortion; new independent confirmatory runs |
+| P3V. Margin sensitivity и powered validation | Synthetic | **in progress** | SESOI bounded by downstream distortion; new independent confirmatory runs |
 | P4. Figures 2/4/5 и paper report | Synthetic | **blocked by P3V** | Claim matrix с reproduced/not-reproduced/underdetermined |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
@@ -571,7 +571,7 @@ Reference implementation находится в `ot_micromr.statistical_gates`; p
 [`statistical-gates-v1`](protocols/common/statistical-gates.md). Никакие новые
 confirmatory outputs в P3S не создавались.
 
-### P3V. Margin sensitivity и powered validation — pending
+### P3V. Margin sensitivity и powered validation — in progress
 
 До регистрации `SIM-*002` требуется:
 
@@ -584,6 +584,33 @@ confirmatory outputs в P3S не создавались.
    эффективного event/compensator estimator без изменения paper-model semantics.
 5. До запуска заморозить required sample size, maximum compute, stopping rule и новые
    config IDs. Underpowered design получает `blocked-precision`, а не binary gate.
+
+Рабочий protocol заморожен в
+[`p3v-powered-validation.md`](protocols/synthetic/p3v-powered-validation.md), решение об
+estimators/compute — в
+[`ADR-0006`](adr/0006-p3v-estimators-power-and-compute.md). Зафиксированы новые IDs
+`SIM-MOMENTS-002` и `SIM-UNBALANCED-002`, 20 независимых новых seeds, measured horizon
+`20000`, resolutions `{0.01, 0.005}`, отсутствие optional stopping и совместный Holm gate
+для flow equivalence, open-drift equivalence и unbalanced superiority. Следующие действия:
+
+1. реализовать integrated hazards/compensators и process-parallel runner;
+2. benchmark `1/4/10/20` CPU workers на pilot workload и проверить bitwise equality;
+3. выпустить sensitivity/power table до чтения `SIM-*002` target outputs;
+4. выполнить оба powered runs и применить global family decision;
+5. только при supported decision перейти к `SIM-FIG4-002`.
+
+Pilot sensitivity и compute design выполнены до target runs. Endpoint-only fault injection
+на 20 historical seed labels и horizon `10000` отвергла provisional margins `0.10/0.15`:
+open-drift fault `+15%` менял normalised peak rate с paired 95% interval примерно
+`[-2.14%, -0.34%]`. Датированный amendment уменьшил flow margin до `0.05`, вернул
+точный drift claim к deterministic generator gate и оставил stochastic
+jump-compensator negative control. Power design теперь задаёт horizon `40000` для
+`SIM-MOMENTS-002`, `20000` для `SIM-UNBALANCED-002`, 20 новых seeds и две отдельные
+Holm families. Factual pilot report:
+[`p3v-sensitivity-and-power.md`](reports/p3v-sensitivity-and-power.md).
+
+Оба target config ещё **не запускались**. Перед запуском implementation/protocol/config
+должны быть закоммичены, потому что claim-eligible runner требует clean tree.
 
 ### P4. Independent paper-result reconstruction
 

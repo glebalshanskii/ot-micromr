@@ -1,12 +1,13 @@
 # Optimal Trading of Microstructure Mean Reversion
 
 Независимое воспроизведение результатов Amaral (2026), а затем причинная проверка
-торговой стратегии на event-level рыночных данных. Сейчас реализован analytical
-baseline для Dawson optimum и Figure 3; synthetic jump simulator и empirical
-backtest относятся к следующим этапам. P3 controlled jump simulator реализован, но
+торговой стратегии на event-level рыночных данных. Реализованы analytical baseline
+для Dawson optimum/Figure 3 и controlled synthetic jump simulator; empirical
+backtest относится к следующим этапам. Historical P3 gate не пройден, но
 его historical confirmatory gate не пройден. Последующий statistical audit показал,
 что rare-open flow/drift и почти весь refinement имеют status `inconclusive`, а старые
-point-estimate rules нельзя использовать для следующих experiments.
+point-estimate rules нельзя использовать для следующих experiments. P3V добавляет
+integrated hazards/compensators, sensitivity-informed margins и powered configs.
 
 ## Environment
 
@@ -57,14 +58,28 @@ uv run ot-micromr run cfg/experiments/sim_unbalanced_001.toml
 Оба используют adaptive frozen-intensity approximation, а не exact sampler. Текущие
 run IDs и failed gates приведены в
 [`docs/reports/p3-controlled-simulation.md`](docs/reports/p3-controlled-simulation.md).
-До нового powered validation experiment переход к Figure 4 запрещён.
+До успешного powered validation переход к Figure 4 запрещён.
 
 Новые stochastic runs следуют
 [`statistical-gates-v1`](docs/protocols/common/statistical-gates.md): equality claims
 требуют equivalence test и power, directional claims — superiority over a justified
-minimum effect, а недостаточная precision даёт `inconclusive`. Следующий этап —
-downstream sensitivity и power/compute design; простого перезапуска старых configs с
-добавочными seeds не будет.
+minimum effect, а недостаточная precision даёт `inconclusive`. Downstream sensitivity
+и power/compute design описаны в
+[`p3v-sensitivity-and-power.md`](docs/reports/p3v-sensitivity-and-power.md). Новые
+claim-eligible runs используют 10 CPU workers, не пишут тяжёлые event logs и требуют
+чистого worktree:
+
+```bash
+uv run ot-micromr validate-config cfg/experiments/sim_moments_002.toml
+uv run ot-micromr validate-config cfg/experiments/sim_unbalanced_002.toml
+uv run ot-micromr run cfg/experiments/sim_moments_002.toml
+uv run ot-micromr run cfg/experiments/sim_unbalanced_002.toml
+```
+
+Это длинные runs: `SIM-MOMENTS-002` имеет measured horizon `40000`, control —
+`20000`. После обоих запусков joint Holm decision рассчитывается
+`scripts/evaluate_p3v_family.py`; дополнительные seeds после просмотра результата не
+добавляются.
 
 Канонический статус и порядок работ: [`docs/plan.md`](docs/plan.md). Scientific
 protocol: [`docs/protocols/synthetic/paper-reproduction.md`](docs/protocols/synthetic/paper-reproduction.md).

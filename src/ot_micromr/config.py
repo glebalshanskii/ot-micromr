@@ -35,7 +35,9 @@ TOP_LEVEL_KEYS = {
 }
 
 ANALYTICAL_EXPERIMENTS = {"ANA-SMOKE-001", "ANA-FIG3-001"}
-SIMULATION_EXPERIMENTS = {"SIM-MOMENTS-001", "SIM-UNBALANCED-001"}
+BALANCED_SIMULATION_EXPERIMENTS = {"SIM-MOMENTS-001", "SIM-MOMENTS-002"}
+UNBALANCED_SIMULATION_EXPERIMENTS = {"SIM-UNBALANCED-001", "SIM-UNBALANCED-002"}
+SIMULATION_EXPERIMENTS = BALANCED_SIMULATION_EXPERIMENTS | UNBALANCED_SIMULATION_EXPERIMENTS
 SUPPORTED_EXPERIMENTS = ANALYTICAL_EXPERIMENTS | SIMULATION_EXPERIMENTS
 
 
@@ -290,7 +292,7 @@ def _validate_simulation_common(data: Mapping[str, Any], experiment_id: str) -> 
             raise ConfigError(f"RunSpec.units.{key}: expected {expected!r}")
     expected_normalization = (
         "alpha_equals_one_reference_instance"
-        if experiment_id == "SIM-MOMENTS-001"
+        if experiment_id in BALANCED_SIMULATION_EXPERIMENTS
         else "tight_response_alpha_equals_one_unbalanced_control"
     )
     if _string(units, "normalization", "RunSpec.units") != expected_normalization:
@@ -306,7 +308,7 @@ def _validate_simulation_common(data: Mapping[str, Any], experiment_id: str) -> 
         "dataset",
         "dataset_reason",
     }
-    if experiment_id == "SIM-UNBALANCED-001":
+    if experiment_id in UNBALANCED_SIMULATION_EXPERIMENTS:
         input_keys |= {"experiment_role", "base_experiment_id"}
     _expect_keys(inputs, input_keys, "RunSpec.inputs")
     if _string(inputs, "source_kind", "RunSpec.inputs") != "paper_model_project_parameters":
@@ -320,11 +322,12 @@ def _validate_simulation_common(data: Mapping[str, Any], experiment_id: str) -> 
         _string(inputs, key, "RunSpec.inputs")
     if _string(inputs, "dataset", "RunSpec.inputs") != "not_applicable":
         raise ConfigError("RunSpec.inputs.dataset: expected 'not_applicable'")
-    if experiment_id == "SIM-UNBALANCED-001":
+    if experiment_id in UNBALANCED_SIMULATION_EXPERIMENTS:
         if _string(inputs, "experiment_role", "RunSpec.inputs") != "extension_negative_control":
             raise ConfigError("RunSpec.inputs.experiment_role: expected extension_negative_control")
-        if _string(inputs, "base_experiment_id", "RunSpec.inputs") != "SIM-MOMENTS-001":
-            raise ConfigError("RunSpec.inputs.base_experiment_id: expected SIM-MOMENTS-001")
+        expected_base = "SIM-MOMENTS-002" if experiment_id.endswith("002") else "SIM-MOMENTS-001"
+        if _string(inputs, "base_experiment_id", "RunSpec.inputs") != expected_base:
+            raise ConfigError(f"RunSpec.inputs.base_experiment_id: expected {expected_base}")
 
     for section in ("strategy", "execution"):
         table = _table(data, section)
@@ -399,13 +402,16 @@ def _validate_simulation_numerics(data: Mapping[str, Any], experiment_id: str) -
     ):
         _string(numerics, key, "RunSpec.numerics")
     alpha_ref = _number(numerics, "alpha_ref_per_second", "RunSpec.numerics", positive=True)
-    expected_alpha_ref = 1.0 if experiment_id == "SIM-MOMENTS-001" else 1.25
+    expected_alpha_ref = 1.0 if experiment_id in BALANCED_SIMULATION_EXPERIMENTS else 1.25
     if alpha_ref != expected_alpha_ref:
         raise ConfigError(f"RunSpec.numerics.alpha_ref_per_second: expected {expected_alpha_ref}")
     if _number(numerics, "primary_resolution_epsilon", "RunSpec.numerics", positive=True) != 0.01:
         raise ConfigError("RunSpec.numerics.primary_resolution_epsilon: expected 0.01")
-    if _number_sequence(numerics, "refinement_epsilons", "RunSpec.numerics") != (0.02, 0.01, 0.005):
-        raise ConfigError("RunSpec.numerics.refinement_epsilons: expected [0.02, 0.01, 0.005]")
+    expected_epsilons = (0.01, 0.005) if experiment_id.endswith("002") else (0.02, 0.01, 0.005)
+    if _number_sequence(numerics, "refinement_epsilons", "RunSpec.numerics") != expected_epsilons:
+        raise ConfigError(
+            f"RunSpec.numerics.refinement_epsilons: expected {list(expected_epsilons)}"
+        )
     quantiles = _number_sequence(numerics, "diagnostic_quantile_probabilities", "RunSpec.numerics")
     if quantiles != (0.0, 0.25, 0.5, 0.9, 0.95, 0.99, 1.0):
         raise ConfigError("RunSpec.numerics.diagnostic_quantile_probabilities: unexpected grid")
@@ -482,7 +488,11 @@ def _validate_simulation_model(data: Mapping[str, Any], experiment_id: str) -> N
         "one_factor_change",
         "initial_state",
     }
-    _expect_keys(model, balanced_keys if experiment_id == "SIM-MOMENTS-001" else unbalanced_keys, "RunSpec.model")
+    _expect_keys(
+        model,
+        balanced_keys if experiment_id in BALANCED_SIMULATION_EXPERIMENTS else unbalanced_keys,
+        "RunSpec.model",
+    )
     if not _boolean(model, "enabled", "RunSpec.model"):
         raise ConfigError("RunSpec.model.enabled: simulation model must be enabled")
     positive_keys = (
@@ -500,7 +510,7 @@ def _validate_simulation_model(data: Mapping[str, Any], experiment_id: str) -> N
         raise ConfigError("RunSpec.model.alpha_o_per_second: expected nonnegative number")
     delta = values["delta_price"]
     tight_alpha = 2.0 * values["alpha_s_per_second"] + alpha_o
-    if experiment_id == "SIM-MOMENTS-001":
+    if experiment_id in BALANCED_SIMULATION_EXPERIMENTS:
         alpha = _number(model, "alpha_per_second", "RunSpec.model", positive=True)
         _string(model, "balanced_response_constraint", "RunSpec.model")
         if not (tight_alpha == values["alpha_c_per_second"] == alpha):
@@ -528,28 +538,57 @@ def _validate_simulation_section(data: Mapping[str, Any], experiment_id: str) ->
         "simultaneous_book_events_allowed",
         "strategy_monitoring_enabled",
     }
-    if experiment_id == "SIM-UNBALANCED-001":
+    if experiment_id in UNBALANCED_SIMULATION_EXPERIMENTS:
         keys.add("reference_reversion_rate_per_second")
+    if experiment_id.endswith("002"):
+        keys |= {"cpu_workers", "deterministic_replay_seeds"}
     _expect_keys(simulation, keys, "RunSpec.simulation")
     if not _boolean(simulation, "enabled", "RunSpec.simulation"):
         raise ConfigError("RunSpec.simulation.enabled: expected true")
     if _number(simulation, "burn_in_reversion_times", "RunSpec.simulation", positive=True) != 100.0:
         raise ConfigError("RunSpec.simulation.burn_in_reversion_times: expected 100")
-    if _number(simulation, "horizon_reversion_times", "RunSpec.simulation", positive=True) != 2000.0:
-        raise ConfigError("RunSpec.simulation.horizon_reversion_times: expected 2000")
+    expected_horizon = (
+        40000.0
+        if experiment_id == "SIM-MOMENTS-002"
+        else 20000.0
+        if experiment_id == "SIM-UNBALANCED-002"
+        else 2000.0
+    )
+    if _number(simulation, "horizon_reversion_times", "RunSpec.simulation", positive=True) != expected_horizon:
+        raise ConfigError(
+            f"RunSpec.simulation.horizon_reversion_times: expected {expected_horizon:g}"
+        )
     if _integer(simulation, "replications", "RunSpec.simulation", positive=True) != 20:
         raise ConfigError("RunSpec.simulation.replications: expected 20")
-    if not _boolean(simulation, "event_log", "RunSpec.simulation"):
-        raise ConfigError("RunSpec.simulation.event_log: expected true")
+    event_log = _boolean(simulation, "event_log", "RunSpec.simulation")
+    if event_log != (not experiment_id.endswith("002")):
+        raise ConfigError(
+            f"RunSpec.simulation.event_log: expected {not experiment_id.endswith('002')}"
+        )
     if _number(simulation, "observation_interval_reversion_times", "RunSpec.simulation", positive=True) != 0.01:
         raise ConfigError("RunSpec.simulation.observation_interval_reversion_times: expected 0.01")
     if _boolean(simulation, "simultaneous_book_events_allowed", "RunSpec.simulation"):
         raise ConfigError("RunSpec.simulation.simultaneous_book_events_allowed: expected false")
     if _boolean(simulation, "strategy_monitoring_enabled", "RunSpec.simulation"):
         raise ConfigError("RunSpec.simulation.strategy_monitoring_enabled: P3 dynamics requires false")
-    if experiment_id == "SIM-UNBALANCED-001":
+    if experiment_id in UNBALANCED_SIMULATION_EXPERIMENTS:
         if _number(simulation, "reference_reversion_rate_per_second", "RunSpec.simulation", positive=True) != 1.0:
             raise ConfigError("RunSpec.simulation.reference_reversion_rate_per_second: expected 1")
+    if experiment_id.endswith("002"):
+        workers = _integer(simulation, "cpu_workers", "RunSpec.simulation", positive=True)
+        if workers > 20:
+            raise ConfigError("RunSpec.simulation.cpu_workers: expected at most 20")
+        replay_seeds = simulation.get("deterministic_replay_seeds")
+        seeds = data["seed_policy"]["seeds"]
+        if (
+            not isinstance(replay_seeds, list)
+            or len(replay_seeds) != 3
+            or any(seed not in seeds for seed in replay_seeds)
+            or len(set(replay_seeds)) != 3
+        ):
+            raise ConfigError(
+                "RunSpec.simulation.deterministic_replay_seeds: expected three unique experiment seeds"
+            )
 
 
 def _validate_numerics(data: Mapping[str, Any], experiment_id: str) -> None:
@@ -734,6 +773,9 @@ def _validate_fig3(data: Mapping[str, Any]) -> None:
 
 
 def _validate_simulation_evaluation(data: Mapping[str, Any], experiment_id: str) -> None:
+    if experiment_id.endswith("002"):
+        _validate_simulation_evaluation_v2(data, experiment_id)
+        return
     evaluation = _table(data, "evaluation")
     common = {"primary_metric", "metrics", "aggregation", "confidence_interval", "multiplicity"}
     if experiment_id == "SIM-MOMENTS-001":
@@ -859,6 +901,141 @@ def _validate_simulation_evaluation(data: Mapping[str, Any], experiment_id: str)
         _boolean(acceptance, key, "RunSpec.acceptance")
     for key in string_keys:
         _string(acceptance, key, "RunSpec.acceptance")
+
+
+def _validate_simulation_evaluation_v2(data: Mapping[str, Any], experiment_id: str) -> None:
+    evaluation = _table(data, "evaluation")
+    common = {
+        "primary_metric",
+        "metrics",
+        "aggregation",
+        "confidence_interval",
+        "multiplicity",
+        "sampling_rule",
+        "finite_h_drift_estimator",
+        "minimum_observations_per_seed_and_parity_for_slope",
+        "primary_family",
+        "refinement_family",
+        "familywise_alpha",
+        "power_target",
+    }
+    if experiment_id in BALANCED_SIMULATION_EXPERIMENTS:
+        keys = common | {
+            "bootstrap_replications",
+            "integrated_hazard_flow_estimator",
+            "compensator_estimator",
+            "finite_h_drift_target_per_second",
+            "generator_drift_check",
+            "acf_estimator",
+            "drift_gap_bin_edges_s_g",
+            "acf_lags_reversion_times",
+            "minimum_pooled_observations_per_drift_bin_and_parity",
+        }
+    else:
+        keys = common | {
+            "generator_drift_estimator",
+            "finite_h_contrast",
+        }
+    _expect_keys(evaluation, keys, "RunSpec.evaluation")
+    sequence_keys = {
+        "metrics",
+        "primary_family",
+        "refinement_family",
+    }
+    numeric_keys = {
+        "bootstrap_replications",
+        "minimum_observations_per_seed_and_parity_for_slope",
+        "minimum_pooled_observations_per_drift_bin_and_parity",
+        "familywise_alpha",
+        "power_target",
+    }
+    for key in keys:
+        if key in sequence_keys or key in numeric_keys or key in {
+            "drift_gap_bin_edges_s_g",
+            "acf_lags_reversion_times",
+        }:
+            continue
+        _string(evaluation, key, "RunSpec.evaluation")
+    for key in sequence_keys:
+        _string_sequence(evaluation, key, "RunSpec.evaluation")
+    _integer(
+        evaluation,
+        "minimum_observations_per_seed_and_parity_for_slope",
+        "RunSpec.evaluation",
+        positive=True,
+    )
+    alpha = _number(evaluation, "familywise_alpha", "RunSpec.evaluation", positive=True)
+    power = _number(evaluation, "power_target", "RunSpec.evaluation", positive=True)
+    if alpha != 0.05 or power != 0.90:
+        raise ConfigError("RunSpec.evaluation: expected familywise_alpha=0.05 and power_target=0.90")
+    if experiment_id in BALANCED_SIMULATION_EXPERIMENTS:
+        _integer(evaluation, "bootstrap_replications", "RunSpec.evaluation", positive=True)
+        _integer(
+            evaluation,
+            "minimum_pooled_observations_per_drift_bin_and_parity",
+            "RunSpec.evaluation",
+            positive=True,
+        )
+        edges = _number_sequence(evaluation, "drift_gap_bin_edges_s_g", "RunSpec.evaluation")
+        if any(right <= left for left, right in zip(edges, edges[1:])):
+            raise ConfigError("RunSpec.evaluation.drift_gap_bin_edges_s_g: edges must increase")
+        lags = _number_sequence(evaluation, "acf_lags_reversion_times", "RunSpec.evaluation")
+        if any(lag <= 0.0 for lag in lags):
+            raise ConfigError("RunSpec.evaluation.acf_lags_reversion_times: lags must be positive")
+
+    acceptance = _table(data, "acceptance")
+    deterministic_numeric = {
+        "invariant_violation_count_max",
+        "parity_violation_count_max",
+        "illegal_transition_count_max",
+        "negative_intensity_count_max",
+        "nonzero_inactive_intensity_count_max",
+        "nonfinite_value_count_max",
+        "multiple_book_event_step_count_max",
+        "deterministic_replay_mismatch_count_max",
+        "generator_drift_abs_residual_max",
+    }
+    scientific_numeric = (
+        {
+            "flow_equivalence_margin",
+            "refinement_flow_equivalence_margin",
+        }
+        if experiment_id in BALANCED_SIMULATION_EXPERIMENTS
+        else {
+            "contrast_minimum_effect_per_second",
+            "refinement_contrast_equivalence_margin_per_second",
+        }
+    )
+    boolean_keys = {
+        "require_all_replications",
+        "require_clean_tree_for_claim",
+        "stop_on_invariant_violation",
+        "stop_on_nonfinite_value",
+    }
+    _expect_keys(
+        acceptance,
+        deterministic_numeric | scientific_numeric | boolean_keys,
+        "RunSpec.acceptance",
+    )
+    for key in deterministic_numeric | scientific_numeric:
+        if _number(acceptance, key, "RunSpec.acceptance") < 0.0:
+            raise ConfigError(f"RunSpec.acceptance.{key}: expected nonnegative number")
+    expected_scientific = (
+        {
+            "flow_equivalence_margin": 0.05,
+            "refinement_flow_equivalence_margin": 0.05,
+        }
+        if experiment_id in BALANCED_SIMULATION_EXPERIMENTS
+        else {
+            "contrast_minimum_effect_per_second": 0.10,
+            "refinement_contrast_equivalence_margin_per_second": 0.15,
+        }
+    )
+    for key, expected in expected_scientific.items():
+        if float(acceptance[key]) != expected:
+            raise ConfigError(f"RunSpec.acceptance.{key}: expected preregistered {expected}")
+    for key in boolean_keys:
+        _boolean(acceptance, key, "RunSpec.acceptance")
 
 
 def validate_runspec(data: Mapping[str, Any]) -> None:
