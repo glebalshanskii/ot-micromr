@@ -6,8 +6,9 @@
 backtest относится к следующим этапам. Historical P3 gate не прошёл, после чего P3V
 заменил эвристические пороги на integrated estimators, sensitivity-informed margins и
 powered equivalence/superiority tests. Оба P3V run и глобальная Holm family поддержаны;
-независимый P4 target выполнен. P4 частично воспроизвёл Figure 4, но formal operational
-acceptance failed и общая scientific family осталась inconclusive; подробности в
+независимый P4 target выполнен. P4 частично воспроизвёл Figure 4; ошибочный all-cell
+interval gate заменён корректной operational-validity проверкой, которая пройдена, а общая
+scientific family осталась inconclusive; подробности в
 [`paper-reproduction.md`](docs/reports/paper-reproduction.md).
 
 ## Environment
@@ -95,7 +96,16 @@ processes, vectorised threshold/policy evaluation на CUDA через `torch.co
 regression oracle.
 
 Claim-eligible P4 config требует CUDA и использует 30 frozen seeds. Канонический target уже
-выполнен и не расширяется; команды ниже предназначены только для exact rerun:
+выполнен и не расширяется. Его frozen config содержит исторический all-cell interval gate;
+exact replay исходного решения требует implementation commit `ca9aa7c`. Текущий code
+пересчитывает исправленную operational acceptance из frozen evidence без повторной симуляции:
+
+```bash
+uv run ot-micromr review-p4-acceptance \
+  outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det
+```
+
+Исходные команды target приведены только для provenance:
 
 ```bash
 uv run ot-micromr validate-config cfg/experiments/sim_fig4_002.toml

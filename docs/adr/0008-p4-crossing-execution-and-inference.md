@@ -1,6 +1,6 @@
 # ADR-0008: P4 crossing, execution and inference semantics
 
-- Status: accepted; target completed with operational failure and inconclusive science
+- Status: accepted; interval-floor decision superseded by ADR-0009
 - Date: 2026-08-11
 - Scope: `SIM-FIG4-PILOT-001` and the future `SIM-FIG4-002`
 
@@ -62,8 +62,9 @@ The completed pilot freezes 30 target strategy seeds, horizon 300, a 0.05 multip
 and a primary minimum inward shift of 0.05. Pilot SD 0.234 implies 29 seeds for 90% power at
 the paper-level 0.20 planning alternative under conservative three-test alpha allocation;
 30 are used. The former 100-interfill floor is replaced by a 20-interval pathwise denominator
-check plus powered seed-cluster inference. This is not a relaxation after target inspection:
-the amendment precedes every target seed.
+check plus powered seed-cluster inference. This historical pre-run rule was later found to be
+an uncalibrated coverage heuristic rather than a validity condition and is superseded by
+[`ADR-0009`](0009-correct-p4-operational-acceptance.md).
 
 ## Consequences
 
@@ -76,8 +77,9 @@ silently treating endpoint detection as exact.
 ## Target outcome
 
 `SIM-FIG4-002/20260811T202753134457Z-837035232ead-det` completed in 34.244 seconds.
-All deterministic and numerical-budget gates passed except the preregistered all-cell
-minimum-interval floor: 38 far-right cells fell below 20, with minimum 12. Two inward-shift
-tests were supported, the high-gamma test was inconclusive, and the refinement family was
-inconclusive. The target is not rerun or extended; the canonical interpretation is recorded
-in [`paper-reproduction.md`](../reports/paper-reproduction.md).
+The original runner labelled it `acceptance_failed` solely because 38 far-right cells fell
+below the uncalibrated all-cell interval floor. ADR-0009 corrects that methodological error
+without changing or rerunning raw evidence. Operational validity passes; two inward-shift tests
+are supported, the high-gamma test is inconclusive, and the refinement family is inconclusive.
+The canonical interpretation is recorded in
+[`paper-reproduction.md`](../reports/paper-reproduction.md).

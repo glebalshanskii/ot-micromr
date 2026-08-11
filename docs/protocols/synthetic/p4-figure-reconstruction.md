@@ -1,7 +1,7 @@
 # P4 protocol: independent Figures 2, 4 and 5 reconstruction
 
 - Date: 2026-08-11
-- Status: target completed; operational acceptance failed; scientific family inconclusive
+- Status: target completed; corrected operational validity passed; scientific family inconclusive
 - Paper: Amaral, *Optimal Trading of Microstructure Mean Reversion*, `arXiv:2608.00885v1`
 - Paper SHA-256: `fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba`
 - Decision: [`ADR-0008`](../../adr/0008-p4-crossing-execution-and-inference.md)
@@ -106,8 +106,9 @@ The primary family contains the three selected-row inward shifts. Minimum meanin
 29 seeds, rounded up to 30. Holm adjustment, not Bonferroni, is used for the final p-values.
 
 The old 100-interval-per-seed rule is not retained as a surrogate for precision. Pilot cells
-had at least 25 intervals, and the target requires at least 20 pathwise only as an operational
-denominator check; inference is controlled by the powered independent-seed design. The
+had at least 25 intervals, and the historical target required at least 20 pathwise as an
+operational denominator check. Post-target audit found that requirement invalid as a hard gate;
+Section 9 records the correction without rewriting this pre-run amendment. The
 six-check numerical-refinement family compares fixed `theta_D` and `theta_star` rates using
 independent Welch TOST with margin `0.02`. Pilot variance predicts that this stricter secondary
 family may be inconclusive at 30 seeds; it is reported honestly and is not allowed to invalidate
@@ -135,9 +136,11 @@ $$
 \frac{\sum_{k=1}^{N}2(|G_{F_k}|-S_{F_k}/2)}{t_{F_N}-t_{F_0}}.
 $$
 
-At least 100 complete intervals are operationally required. Report raw rate, rate divided by
-`alpha*s_G`, rate divided by the surrogate optimum, mean inter-fill time, overshoot, open-fill
-share and a frozen `delta/2` cost diagnostic.
+The original draft requested at least 100 complete intervals and the target amendment replaced
+it by 20. Both counts are retained as historical coverage diagnostics and are superseded as
+hard gates by Section 9. Report raw rate, rate divided by `alpha*s_G`, rate divided by the
+surrogate optimum, mean inter-fill time, overshoot, open-fill share and a frozen `delta/2` cost
+diagnostic.
 
 ## 5. Estimands and inference
 
@@ -161,7 +164,8 @@ is forbidden.
 
 - all requested rows, seeds and thresholds present;
 - no parity, transition, intensity or nonfinite invariant violation;
-- every policy non-flat before measurement and at least 100 complete measured intervals;
+- every policy non-flat before measurement; the historical interval floor is superseded by
+  Section 9 and does not determine validity;
 - omitted bridge-probability and full-band recrossing upper bounds below frozen budgets;
 - deterministic replay for declared pilot/target seeds;
 - Dawson residual below `1e-10` and calibration table written before P&L evaluation;
@@ -180,3 +184,22 @@ calibration or statistical evidence for Figure 4.
 Source/resolved config, manifest, calibration table and hash, seed-threshold metrics, summary,
 bootstrap/functionals table, Figure 2/4/5 data and PNGs, fill sample, log and backend benchmark.
 Heavy raw market paths remain ignored under `outputs/`.
+
+## 9. Post-target methodological correction, 2026-08-11
+
+After the target completed, review identified a category error in the acceptance aggregation.
+The all-cell minimum of 20 complete inter-fill intervals was an unpowered heuristic. Complete
+seed paths, not within-path renewal cycles, are the independent clusters used by the frozen
+bootstrap and Holm tests. Remote thresholds with low turnover may therefore be noisy, but that
+does not make the simulation or central estimands invalid.
+
+[`ADR-0009`](../../adr/0009-correct-p4-operational-acceptance.md) supersedes only this decision
+rule. `p4-operational-validity-v2` requires complete requested evidence, defined finite rates,
+non-flat policies, state/accounting invariants, numerical budgets and deterministic replay.
+The historical 20-count rule remains a coverage diagnostic. No model parameter, seed, path,
+threshold, estimator, bootstrap draw, p-value or scientific decision is changed.
+
+The corrected review is computed from the frozen raw CSV/JSON evidence by
+`ot-micromr review-p4-acceptance`. All corrected operational gates pass. The original runner
+artifact remains immutable and is explicitly marked as superseded on operational acceptance;
+the scientific family remains `inconclusive`.

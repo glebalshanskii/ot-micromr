@@ -4,7 +4,7 @@
 >
 > **Ветка:** `feat/p4-figure4-reproduction`
 >
-> **Текущий статус:** P4 completed; operational acceptance failed; scientific family inconclusive
+> **Текущий статус:** P4 completed; corrected operational validity passed; scientific family inconclusive
 >
 > **Следующий шаг:** P5 licensed event-level data feasibility и frozen universe/split
 
@@ -388,7 +388,7 @@ source TOML после запуска не переписывается под �
 | P3. Jump simulator и theorem checks | Synthetic | **completed; gate failed** | Invariants прошли; flow/control precision gates не прошли |
 | P3S. Statistical gate audit | Common | **completed** | Gates classified; TOST/superiority/multiplicity/power policy accepted |
 | P3V. Margin sensitivity и powered validation | Synthetic | **completed; supported** | SESOI bounded by downstream distortion; new independent confirmatory runs passed |
-| P4. Figures 2/4/5 и paper report | Synthetic | **in progress** | Claim matrix с reproduced/not-reproduced/underdetermined |
+| P4. Figures 2/4/5 и paper report | Synthetic | **completed** | Partial reproduction; corrected operational validity passed; scientific family inconclusive |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
 | P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
@@ -662,7 +662,9 @@ rate loss at $\theta_D$, 5--6% at $\theta^*$) сравниваются с confid
 требует family-adjusted one-sided lower bound выше заранее обоснованного minimum shift;
 rate/loss estimates публикуются с seed-cluster intervals. Numerical refinement проходит
 только equivalence test. Pilot amendment заменил эвристический floor 100 на pathwise floor
-20 и отдельный powered seed-cluster design; эти два gate не подменяют друг друга.
+20, но post-target audit выявил, что и новый floor не имел statistical/power justification.
+ADR-0009 оставляет counts coverage diagnostic и использует powered seed-cluster design для
+stochastic решения.
 
 Непосредственный следующий шаг: реализовать continuous-crossing policy monitor,
 preregister `SIM-FIG4-002` и до target inspection benchmark-ом выбрать CPU/GPU execution
@@ -679,10 +681,13 @@ Figures 2 и 5 генерируются как явно illustrative artifacts �
 
 Target выполнен один раз из clean commit `ca9aa7c1e9841fccb35f47f41a8e0863e795d3c7`:
 `SIM-FIG4-002/20260811T202753134457Z-837035232ead-det`, runtime `34.244 s`.
-Operational acceptance failed только из-за all-cell interval floor: minimum 12 против 20
-в far-right high-gamma cells; остальные deterministic/numerical gates прошли. Inward shift
-15% и 20% supported для gamma `0.272/0.342`, high-gamma 5% inconclusive; refinement family
-inconclusive. P4 получает status **completed / acceptance failed / scientific inconclusive**.
+Original runner status `acceptance_failed` был вызван только all-cell interval floor: minimum
+12 против 20 в far-right high-gamma cells. Post-target methodological audit установил, что это
+необоснованный count heuristic над зависимыми within-path intervals. ADR-0009 пересчитывает
+решение без изменения raw data или scientific tests: все corrected operational gates прошли.
+Inward shift 15% и 20% supported для gamma `0.272/0.342`, high-gamma 5% inconclusive;
+refinement family inconclusive. P4 получает status
+**completed / operational validity passed / scientific inconclusive**.
 Полный evidence report: [`paper-reproduction.md`](reports/paper-reproduction.md).
 
 Следующий шаг — P5: выбрать licensed event-level source и до просмотра P&L заморозить
@@ -937,7 +942,9 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 
 ## 9. Ближайший исполняемый шаг
 
-P4 завершён без post-target extension. Следующий шаг — P5 data feasibility: выбрать
+P4 завершён без post-target data extension. Ошибочный interval-floor decision superseded
+отдельным deterministic review существующих raw artifacts; model paths, estimands и scientific
+tests не менялись. Следующий шаг — P5 data feasibility: выбрать
 licensed event-level L1/L2 source, зафиксировать venue/instruments/calendar/cost metadata,
 preregister large-tick eligibility cutoffs и chronological train/validation/test split до
 любого strategy P&L. При отсутствии лицензируемых данных stage получает `blocked-data`.
