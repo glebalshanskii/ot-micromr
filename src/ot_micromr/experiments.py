@@ -34,6 +34,7 @@ from ot_micromr.artifacts import (
 )
 from ot_micromr.config import RunSpec
 from ot_micromr.errors import ExperimentError
+from ot_micromr.empirical_data import evaluate_empirical_data
 from ot_micromr.figure4_experiments import evaluate_figure4
 from ot_micromr.simulation_experiments import evaluate_simulation
 
@@ -431,6 +432,21 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                 "calibration_table": [run_directory / "tables" / "calibration.csv"],
             }
         )
+    if spec.experiment_id == "EMP-DATA-001":
+        paths_by_class.update(
+            {
+                "metrics_raw": [
+                    run_directory / "metrics" / "file_quality.csv",
+                    run_directory / "metrics" / "raw_manifest.json",
+                    run_directory / "metrics" / "bootstrap.json",
+                ],
+                "table": [
+                    run_directory / "tables" / "day_quality.csv",
+                    run_directory / "tables" / "funding_quality.csv",
+                    run_directory / "tables" / "split_freeze.csv",
+                ],
+            }
+        )
     result: dict[str, bool] = {}
     for artifact_class in spec.values["artifacts"]["required_classes"]:
         if artifact_class == "manifest":
@@ -513,6 +529,8 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_simulation(spec, run_directory)
         elif spec.experiment_id == "SIM-FIG4-002":
             evaluation = evaluate_figure4(spec, run_directory)
+        elif spec.experiment_id == "EMP-DATA-001":
+            evaluation = evaluate_empirical_data(spec, run_directory)
         else:
             raise ExperimentError(f"experiment runner is not implemented: {spec.experiment_id}")
         metrics = evaluation.metrics
@@ -558,6 +576,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
         atomic_write_json(run_directory / "metrics" / "summary.json", summary)
 
     is_figure4 = spec.experiment_id == "SIM-FIG4-002"
+    is_empirical_data = spec.experiment_id == "EMP-DATA-001"
     numerics_manifest = (
         {
             "market_float_dtype": spec.values["numerics"]["market_float_dtype"],
@@ -568,7 +587,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
         if is_figure4
         else {
             "float_dtype": spec.values["numerics"]["float_dtype"],
-            "device": "cpu",
+            "device": spec.values["numerics"].get("compute_device", "cpu"),
             "known_nondeterministic_kernels": [],
         }
     )
@@ -600,6 +619,31 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             ],
         }
     )
+    source_manifest = {
+        "config_path": spec.source_path.relative_to(repository_root).as_posix(),
+        "config_sha256": spec.source_sha256,
+        "resolved_runspec_path": "resolved_runspec.json",
+        "resolved_runspec_file_sha256": sha256_file(run_directory / "resolved_runspec.json"),
+        "runspec_sha256": spec.sha256,
+        "dataset": spec.values["inputs"]["dataset"],
+    }
+    if is_empirical_data:
+        source_manifest.update(
+            {
+                "dataset_sha256": spec.values["inputs"]["dataset_sha256"],
+                "venue": spec.values["inputs"]["venue"],
+                "source_spec_path": spec.values["inputs"]["source_spec_path"],
+                "source_spec_sha256": spec.values["inputs"]["source_spec_sha256"],
+                "raw_manifest_path": spec.values["inputs"]["raw_manifest_path"],
+            }
+        )
+    else:
+        source_manifest.update(
+            {
+                "paper_version": spec.values["inputs"]["paper_version"],
+                "paper_pdf_sha256": spec.values["inputs"]["paper_pdf_sha256"],
+            }
+        )
     manifest = {
         "schema_version": "run-manifest-v1",
         "run_id": run_id,
@@ -615,18 +659,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             **git,
             "dirty_artifact": dirty_artifact,
         },
-        "source": {
-            "config_path": spec.source_path.relative_to(repository_root).as_posix(),
-            "config_sha256": spec.source_sha256,
-            "resolved_runspec_path": "resolved_runspec.json",
-            "resolved_runspec_file_sha256": sha256_file(
-                run_directory / "resolved_runspec.json"
-            ),
-            "runspec_sha256": spec.sha256,
-            "paper_version": spec.values["inputs"]["paper_version"],
-            "paper_pdf_sha256": spec.values["inputs"]["paper_pdf_sha256"],
-            "dataset": spec.values["inputs"]["dataset"],
-        },
+        "source": source_manifest,
         "environment": environment_provenance(repository_root),
         "numerics": numerics_manifest,
         "seeds": seed_manifest,

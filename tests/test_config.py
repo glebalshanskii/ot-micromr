@@ -84,6 +84,19 @@ class RunSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "disagrees with strategy seeds"):
             validate_runspec(data)
 
+    def test_empirical_target_contract_validates(self) -> None:
+        spec = load_runspec(REPOSITORY_ROOT / "cfg" / "experiments" / "emp_data_001.toml")
+        self.assertEqual(spec.values["track"], "empirical")
+        self.assertEqual(
+            spec.values["inputs"]["dataset_sha256"],
+            "0e3a6d6e99586b72ccc237bde7f8df4c3651ba4bd4495b391d9a20771c0e3888",
+        )
+
+        data = load_data("emp_data_001.toml")
+        data["strategy"]["enabled"] = True
+        with self.assertRaisesRegex(ConfigError, "strategy.enabled: EMP-DATA-001 requires false"):
+            validate_runspec(data)
+
     def test_unknown_simulation_field_is_rejected(self) -> None:
         data = load_data("sim_moments_002.toml")
         data["simulation"]["implicit_dt"] = 0.1
