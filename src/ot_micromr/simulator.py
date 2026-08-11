@@ -38,6 +38,9 @@ class SimulationSettings:
     diagnostic_quantiles: tuple[float, ...]
     acf_lags_seconds: tuple[float, ...]
     minimum_slope_observations: int
+    record_events: bool = True
+    sampling_rate_multipliers: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+    collect_step_diagnostics: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +79,15 @@ def settings_from_spec(values: Mapping[str, Any]) -> SimulationSettings:
         ),
         acf_lags_seconds=lags,
         minimum_slope_observations=int(evaluation["minimum_observations_per_seed_and_parity_for_slope"]),
+        record_events=bool(simulation.get("event_log", True)),
+        sampling_rate_multipliers=tuple(
+            float(value)
+            for value in simulation.get(
+                "pilot_sampling_rate_multipliers",
+                (1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
+            )
+        ),
+        collect_step_diagnostics=bool(simulation.get("step_diagnostics", True)),
     )
 
 
@@ -124,27 +136,25 @@ def _path_digest(
     tight: np.ndarray,
     events: list[BookEventRecord],
     step_count: int,
+    book_event_count: int,
+    channel_hazard_integrals: np.ndarray,
+    measured_channel_counts: np.ndarray,
 ) -> str:
     digest = hashlib.sha256()
     digest.update(gaps.tobytes(order="C"))
     digest.update(tight.tobytes(order="C"))
-    digest.update(struct.pack("<ddiQ", state.time_seconds, state.efficient_price, state.mid_half_ticks, step_count))
-    for event in events:
-        digest.update(
-            struct.pack(
-                "<Qdidddid?",
-                event.event_index,
-                event.time_seconds,
-                event.pre_mid_half_ticks,
-                event.left_gap_price,
-                event.pre_event_gap_price,
-                event.post_event_gap_price,
-                event.post_mid_half_ticks,
-                event.left_channel_intensity_per_second,
-                event.measured,
-            )
+    digest.update(
+        struct.pack(
+            "<ddiQQ",
+            state.time_seconds,
+            state.efficient_price,
+            state.mid_half_ticks,
+            step_count,
+            book_event_count,
         )
-        digest.update(event.channel.encode("ascii"))
+    )
+    digest.update(channel_hazard_integrals.tobytes(order="C"))
+    digest.update(measured_channel_counts.tobytes(order="C"))
     return digest.hexdigest()
 
 
@@ -159,6 +169,14 @@ def simulate_replication(
     simulation_settings = settings or settings_from_spec(values)
     if epsilon <= 0.0 or epsilon >= 1.0:
         raise ValueError("epsilon must lie in (0, 1)")
+    if (
+        len(simulation_settings.sampling_rate_multipliers) != len(EVENT_CHANNELS)
+        or any(
+            not math.isfinite(value) or value <= 0.0
+            for value in simulation_settings.sampling_rate_multipliers
+        )
+    ):
+        raise ValueError("sampling-rate multipliers must contain six positive finite values")
     if simulation_settings.horizon_seconds <= 0.0 or simulation_settings.observation_interval_seconds <= 0.0:
         raise ValueError("horizon and observation interval must be positive")
     interval_count_float = (
@@ -197,10 +215,15 @@ def simulate_replication(
     measured_step_count = 0
     measured_event_count = 0
     measured_jump_square_sum = 0.0
+    book_event_count = 0
+    channel_hazard_integrals = np.zeros(len(EVENT_CHANNELS), dtype=np.float64)
+    measured_channel_counts = np.zeros(len(EVENT_CHANNELS), dtype=np.int64)
     maximum_left_event_probability = 0.0
     generator_max_residual = {True: 0.0, False: 0.0}
     generator_numerator = {True: 0.0, False: 0.0}
     generator_denominator = {True: 0.0, False: 0.0}
+    realised_jump_drift_numerator = {True: 0.0, False: 0.0}
+    realised_jump_drift_denominator = {True: 0.0, False: 0.0}
     tolerance = 5e-12
 
     while state.time_seconds < total_end - tolerance:
@@ -209,7 +232,15 @@ def simulate_replication(
         left_tight = state.is_tight
         left_gap = state.gap_price(parameters)
         left_rates = intensities(state, parameters)
-        total_rate = sum(left_rates)
+        sampling_rates = tuple(
+            rate * multiplier
+            for rate, multiplier in zip(
+                left_rates,
+                simulation_settings.sampling_rate_multipliers,
+                strict=True,
+            )
+        )
+        total_rate = sum(sampling_rates)
         if not math.isfinite(total_rate) or total_rate <= 0.0:
             raise InvariantViolation("total book intensity must be positive and finite")
         boundary_remaining = next_boundary - left_time
@@ -229,8 +260,12 @@ def simulate_replication(
         selected_channel: str | None = None
         if event_occurs:
             selected_index, selected_channel = _select_channel(
-                left_rates, total_rate, float(channel_rng.random())
+                sampling_rates, total_rate, float(channel_rng.random())
             )
+
+        measured_step = left_time >= simulation_settings.burn_seconds - tolerance
+        if measured_step:
+            channel_hazard_integrals += np.asarray(left_rates, dtype=np.float64) * step
 
         state.efficient_price += (
             parameters.sigma_x_price_per_sqrt_second * math.sqrt(step) * float(brownian_rng.normal())
@@ -256,7 +291,7 @@ def simulate_replication(
             event = BookEventRecord(
                 epsilon=float(epsilon),
                 seed=int(seed),
-                event_index=len(events),
+                event_index=book_event_count,
                 time_seconds=state.time_seconds,
                 channel=selected_channel,
                 left_gap_price=left_gap,
@@ -266,17 +301,30 @@ def simulate_replication(
                 post_mid_half_ticks=state.mid_half_ticks,
                 efficient_price=state.efficient_price,
                 delta_mid_price=delta_mid,
-                left_channel_intensity_per_second=left_rates[selected_index],
+                left_channel_intensity_per_second=sampling_rates[selected_index],
                 measured=measured,
             )
-            events.append(event)
+            if simulation_settings.record_events:
+                events.append(event)
+            book_event_count += 1
             if measured:
                 measured_event_count += 1
                 measured_jump_square_sum += delta_mid * delta_mid
+                measured_channel_counts[selected_index] += 1
+                realised_jump_drift_numerator[left_tight] += left_gap * delta_mid
 
         right_rates = intensities(state, parameters)
-        right_lambda_steps.append(sum(right_rates) * step)
-        step_sizes.append(step)
+        right_sampling_rate = sum(
+            rate * multiplier
+            for rate, multiplier in zip(
+                right_rates,
+                simulation_settings.sampling_rate_multipliers,
+                strict=True,
+            )
+        )
+        if simulation_settings.collect_step_diagnostics:
+            right_lambda_steps.append(right_sampling_rate * step)
+            step_sizes.append(step)
         step_count += 1
         drift = generator_mid_drift(state, parameters, left_rates)
         coefficient = (
@@ -286,10 +334,11 @@ def simulate_replication(
         )
         residual = abs(drift + coefficient * left_gap)
         generator_max_residual[left_tight] = max(generator_max_residual[left_tight], residual)
-        if left_time >= simulation_settings.burn_seconds - tolerance:
+        if measured_step:
             measured_step_count += 1
             generator_numerator[left_tight] += left_gap * drift
             generator_denominator[left_tight] += left_gap * left_gap
+            realised_jump_drift_denominator[left_tight] += left_gap * left_gap * step
 
         if state.mid_half_ticks % 2 == 0 and state.spread_price(parameters) != 2.0 * parameters.delta_price:
             raise InvariantViolation("open parity/spread mismatch")
@@ -401,8 +450,37 @@ def simulate_replication(
         parity: generator_numerator[parity] / generator_denominator[parity]
         for parity in (True, False)
     }
-    step_array = np.asarray(step_sizes, dtype=np.float64)
-    right_array = np.asarray(right_lambda_steps, dtype=np.float64)
+    realised_jump_drift_slopes = {
+        parity: realised_jump_drift_numerator[parity]
+        / realised_jump_drift_denominator[parity]
+        for parity in (True, False)
+    }
+    opening_hazard = float(channel_hazard_integrals[2] + channel_hazard_integrals[3])
+    closing_hazard = float(channel_hazard_integrals[4] + channel_hazard_integrals[5])
+    opening_count = int(measured_channel_counts[2] + measured_channel_counts[3])
+    closing_count = int(measured_channel_counts[4] + measured_channel_counts[5])
+    hazard_flow_denominator = opening_hazard + closing_hazard
+    if hazard_flow_denominator <= 0.0:
+        raise InvariantViolation("measured opening and closing hazards must be positive")
+    integrated_hazard_flow_residual = (
+        2.0 * (closing_hazard - opening_hazard) / hazard_flow_denominator
+    )
+    count_flow_denominator = opening_count + closing_count
+    if count_flow_denominator <= 0:
+        raise InvariantViolation("measured opening and closing transition counts must be positive")
+    realised_count_flow_residual = (
+        2.0 * (closing_count - opening_count) / count_flow_denominator
+    )
+    transition_count_imbalance = closing_count - opening_count
+    if abs(transition_count_imbalance) > 1:
+        raise InvariantViolation("opening/closing transition counts differ by more than one")
+    channel_compensator_residuals = measured_channel_counts.astype(np.float64) - channel_hazard_integrals
+    channel_compensator_z = np.divide(
+        channel_compensator_residuals,
+        np.sqrt(channel_hazard_integrals),
+        out=np.zeros_like(channel_compensator_residuals),
+        where=channel_hazard_integrals > 0.0,
+    )
     metrics: dict[str, Any] = {
         "epsilon": float(epsilon),
         "seed": int(seed),
@@ -426,11 +504,17 @@ def simulate_replication(
         - finite_slopes[False],
         "generator_drift_slope_tight_per_second": generator_slopes[True],
         "generator_drift_slope_open_per_second": generator_slopes[False],
+        "realised_jump_drift_slope_tight_per_second": realised_jump_drift_slopes[True],
+        "realised_jump_drift_slope_open_per_second": realised_jump_drift_slopes[False],
+        "realised_jump_parity_drift_slope_contrast_per_second": realised_jump_drift_slopes[True]
+        - realised_jump_drift_slopes[False],
+        "realised_jump_drift_denominator_tight": realised_jump_drift_denominator[True],
+        "realised_jump_drift_denominator_open": realised_jump_drift_denominator[False],
         "generator_drift_abs_residual_tight": generator_max_residual[True],
         "generator_drift_abs_residual_open": generator_max_residual[False],
         "step_count": step_count,
         "measured_step_count": measured_step_count,
-        "book_event_count": len(events),
+        "book_event_count": book_event_count,
         "measured_book_event_count": measured_event_count,
         "event_step_fraction": len(events) / step_count,
         "maximum_left_event_probability": maximum_left_event_probability,
@@ -448,17 +532,52 @@ def simulate_replication(
         "bridge_only_crossing_applicability": "not_applicable_strategy_monitoring_disabled",
         "multiple_crossing_refinement_count": None,
         "multiple_crossing_refinement_applicability": "not_applicable_strategy_monitoring_disabled",
+        "opening_hazard_integral": opening_hazard,
+        "closing_hazard_integral": closing_hazard,
+        "opening_transition_count": opening_count,
+        "closing_transition_count": closing_count,
+        "transition_count_imbalance": transition_count_imbalance,
+        "integrated_hazard_flow_signed_relative_residual": integrated_hazard_flow_residual,
+        "realised_count_flow_signed_relative_residual": realised_count_flow_residual,
+        "event_log_recorded": simulation_settings.record_events,
+        "sampling_rate_multipliers": list(simulation_settings.sampling_rate_multipliers),
+        "step_diagnostics_collected": simulation_settings.collect_step_diagnostics,
     }
-    metrics.update(_quantile_metrics("step_size_seconds", step_array, simulation_settings.diagnostic_quantiles))
-    metrics.update(
-        _quantile_metrics(
-            "lambda_total_right_times_step", right_array, simulation_settings.diagnostic_quantiles
+    for index, channel in enumerate(EVENT_CHANNELS):
+        metrics[f"hazard_integral_{channel}"] = float(channel_hazard_integrals[index])
+        metrics[f"measured_count_{channel}"] = int(measured_channel_counts[index])
+        metrics[f"compensator_residual_{channel}"] = float(channel_compensator_residuals[index])
+        metrics[f"compensator_z_{channel}"] = float(channel_compensator_z[index])
+    if simulation_settings.collect_step_diagnostics:
+        step_array = np.asarray(step_sizes, dtype=np.float64)
+        right_array = np.asarray(right_lambda_steps, dtype=np.float64)
+        metrics.update(
+            _quantile_metrics(
+                "step_size_seconds", step_array, simulation_settings.diagnostic_quantiles
+            )
         )
-    )
+        metrics.update(
+            _quantile_metrics(
+                "lambda_total_right_times_step",
+                right_array,
+                simulation_settings.diagnostic_quantiles,
+            )
+        )
+    else:
+        metrics["step_quantiles_applicability"] = "not_collected_bounded_memory_p3v"
     for lag_seconds, value in acf.items():
         metrics[f"acf_lag_{lag_seconds:g}_seconds"] = value
 
-    digest = _path_digest(state, gaps, tight, events, step_count)
+    digest = _path_digest(
+        state,
+        gaps,
+        tight,
+        events,
+        step_count,
+        book_event_count,
+        channel_hazard_integrals,
+        measured_channel_counts,
+    )
     return ReplicationResult(
         epsilon=float(epsilon),
         seed=int(seed),

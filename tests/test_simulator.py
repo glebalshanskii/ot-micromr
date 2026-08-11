@@ -38,6 +38,37 @@ class SimulatorTests(unittest.TestCase):
         self.assertLessEqual(result.seed_metrics["generator_drift_abs_residual_open"], 1e-12)
         self.assertIsNone(result.seed_metrics["bridge_only_crossing_count"])
         self.assertFalse(result.seed_metrics["deterministic_replay_checked"])
+        self.assertLessEqual(abs(result.seed_metrics["transition_count_imbalance"]), 1)
+        self.assertIn("integrated_hazard_flow_signed_relative_residual", result.seed_metrics)
+        self.assertIn("compensator_z_open_up", result.seed_metrics)
+
+    def test_event_log_can_be_disabled_without_changing_path(self) -> None:
+        recorded = simulate_replication(
+            self.values,
+            epsilon=0.01,
+            seed=2026081105,
+            settings=self.settings,
+        )
+        unrecorded_settings = SimulationSettings(
+            burn_seconds=self.settings.burn_seconds,
+            horizon_seconds=self.settings.horizon_seconds,
+            observation_interval_seconds=self.settings.observation_interval_seconds,
+            alpha_ref_per_second=self.settings.alpha_ref_per_second,
+            diagnostic_quantiles=self.settings.diagnostic_quantiles,
+            acf_lags_seconds=self.settings.acf_lags_seconds,
+            minimum_slope_observations=self.settings.minimum_slope_observations,
+            record_events=False,
+        )
+        unrecorded = simulate_replication(
+            self.values,
+            epsilon=0.01,
+            seed=2026081105,
+            settings=unrecorded_settings,
+        )
+        self.assertEqual(recorded.replay_digest, unrecorded.replay_digest)
+        self.assertGreater(len(recorded.events), 0)
+        self.assertEqual(unrecorded.events, ())
+        np.testing.assert_array_equal(recorded.gaps, unrecorded.gaps)
 
     def test_bitwise_replay_is_deterministic(self) -> None:
         first = simulate_replication(self.values, 0.01, 2026081102, settings=self.settings)

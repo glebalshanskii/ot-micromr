@@ -1,6 +1,7 @@
 # ADR-0004: P3 gate failure, stop перед Figure 4 и граница precision extension
 
-- **Статус:** Accepted
+- **Статус:** Superseded in part by [`ADR-0005`](0005-statistical-decision-gates.md);
+  historical P3 outcome remains accepted
 - **Дата:** 2026-08-11
 - **Связанный этап:** P3
 - **Связанные runs:** `SIM-MOMENTS-001`, `SIM-UNBALANCED-001`
@@ -19,6 +20,13 @@ model regime. Protocol допускает увеличение compute толь�
 старых artifacts, original seed prefix и scientific parameters.
 
 ## Решение
+
+Post-run statistical audit later showed that preserving the old thresholds while only
+adding compute would preserve a flawed point-estimate/refinement decision rule. Items
+5--6 below remain the historical rule for any literal old-design precision extension,
+but such extension is no longer planned. Future validation follows ADR-0005 with new
+experiment IDs, independent confirmatory seeds and margins derived from downstream
+sensitivity; old artifacts and status remain unchanged.
 
 1. P3 фиксируется как `completed; acceptance_failed; inconclusive`. Failed runs не
    перезаписываются и не заменяются более удачными seeds.

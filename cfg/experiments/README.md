@@ -11,9 +11,11 @@ written separately to `manifest.json` and never mutates the preregistered TOML.
 |---|---|---|---|
 | `ANA-SMOKE-001` | `ana_smoke_001.toml` | One deterministic Dawson-root contract | passed in P2 |
 | `ANA-FIG3-001` | `ana_fig3_001.toml` | Deterministic Figure 3 reconstruction | reproduced in P2 |
-| `SIM-MOMENTS-001` | `sim_moments_001.toml` | Jump-model invariants and stationary theorem checks | P3 acceptance failed; retained |
-| `SIM-UNBALANCED-001` | `sim_unbalanced_001.toml` | One-factor parity-drift negative control | P3 acceptance failed; retained |
-| `SIM-FIG4-001` | `sim_fig4_001.toml` | Independent partial Figure 4 reconstruction | blocked by failed P3 gate; not run |
+| `SIM-MOMENTS-001` | `sim_moments_001.toml` | Jump-model invariants and stationary theorem checks | historical P3 acceptance failed; immutable |
+| `SIM-UNBALANCED-001` | `sim_unbalanced_001.toml` | One-factor parity-drift negative control | historical P3 acceptance failed; immutable |
+| `SIM-FIG4-001` | `sim_fig4_001.toml` | Legacy independent partial Figure 4 contract | blocked and superseded before run |
+| `SIM-MOMENTS-002` | `sim_moments_002.toml` | Powered integrated-flow and exact-generator validation | passed; global P3V supported |
+| `SIM-UNBALANCED-002` | `sim_unbalanced_002.toml` | Powered jump-compensator negative control | passed; global P3V supported |
 
 The source paper does not disclose the primitive parameters, simulator, seeds or raw
 outputs used for Figure 4. Parameters in all three `SIM-*` configs are therefore
@@ -30,8 +32,25 @@ Missing or unknown fields, non-finite floats, scientific CLI overrides and impli
 seeds/defaults are errors. New result-affecting values require a new config or a dated
 protocol amendment before the affected target output is inspected.
 
-The strict typed validator and runner support both `ANA-*` contracts plus
-`SIM-MOMENTS-001` and `SIM-UNBALANCED-001`. `SIM-FIG4-001` remains a preregistered P4
-input and is rejected as not executable while P3 gates are unresolved. Existing failed
-run directories are immutable; a precision extension requires a new experiment ID and
-dated amendment rather than editing these configs.
+The strict typed validator and runner support both `ANA-*` contracts plus both generations
+of `SIM-MOMENTS-*` and `SIM-UNBALANCED-*`. `SIM-FIG4-001` remains a preregistered P4
+input and is superseded by the planned `SIM-FIG4-002`. Existing failed
+run directories are immutable; any replacement requires a new experiment ID, justified
+statistical contract and dated amendment rather than editing these configs.
+
+## Statistical gate policy
+
+[`statistical-gates-v1`](../../docs/protocols/common/statistical-gates.md) applies to
+every future stochastic config. The old `SIM-*001` configs intentionally retain their
+historical point/refinement gates for exact replay; they are not templates for new
+experiments.
+
+A future executable stochastic RunSpec must declare each gate class, estimand, target,
+SESOI/equivalence margin with an external or downstream-sensitivity justification,
+independent unit, familywise alpha/correction, target power and three-way decision rule.
+Equality uses equivalence tests; superiority uses one-sided inference over a minimum
+effect; refinement uses paired or independent equivalence and never `tolerance OR SE`.
+
+Reference statistical primitives live in `ot_micromr.statistical_gates`. The `*002`
+contracts follow the dated sensitivity amendment in the P3V protocol; their global Holm
+decision is evaluated only after both immutable target runs exist.

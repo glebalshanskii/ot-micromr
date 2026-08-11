@@ -2,11 +2,11 @@
 
 > **Обновлено:** 2026-08-11
 >
-> **Ветка:** `feat/p3-jump-simulator`
+> **Ветка:** `docs/statistical-gate-framework`
 >
-> **Текущий статус:** P3 выполнен, но confirmatory gate не пройден из-за flow/control precision
+> **Текущий статус:** P3V выполняется по замороженному sensitivity/power protocol; P4 остаётся заблокирован
 >
-> **Следующий шаг:** отдельный preregistered P3 precision extension; P4 заблокирован
+> **Следующий шаг:** downstream gate-margin sensitivity и power/compute design; P4 заблокирован
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -26,8 +26,9 @@
 ### 1.1. Что означает «воспроизвести»
 
 - Аналитические результаты получены независимым кодом и совпадают с формулами.
-- Stochastic simulator удовлетворяет model invariants и воспроизводит теоретические
-  moments в пределах заранее заданной Monte Carlo uncertainty.
+- Stochastic simulator удовлетворяет model invariants, а theoretical moments проходят
+  multiplicity-aware equivalence с заранее обоснованной margin и достаточной power;
+  простое попадание target в широкий confidence interval не считается reproduction.
 - Каждый рисунок классифицирован как `reproduced`, `partially-reproduced`,
   `not-reproduced` или `underdetermined`; отрицательный результат не меняет protocol
   задним числом.
@@ -385,7 +386,9 @@ source TOML после запуска не переписывается под �
 | P1. Contracts и protocols | Common | **completed** | ADRs, schema, configs и acceptance thresholds приняты до runs |
 | P2. Analytical executable baseline | Synthetic | **completed** | Closed forms, tests, smoke run и Figure 3 reproduction |
 | P3. Jump simulator и theorem checks | Synthetic | **completed; gate failed** | Invariants прошли; flow/control precision gates не прошли |
-| P4. Figures 2/4/5 и paper report | Synthetic | **blocked by P3** | Claim matrix с reproduced/not-reproduced/underdetermined |
+| P3S. Statistical gate audit | Common | **completed** | Gates classified; TOST/superiority/multiplicity/power policy accepted |
+| P3V. Margin sensitivity и powered validation | Synthetic | **completed; supported** | SESOI bounded by downstream distortion; new independent confirmatory runs passed |
+| P4. Figures 2/4/5 и paper report | Synthetic | **in progress** | Claim matrix с reproduced/not-reproduced/underdetermined |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
 | P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
@@ -545,6 +548,94 @@ preregistered precision experiment ID или честного решения о�
 Factual closeout: [`docs/reports/p3-controlled-simulation.md`](reports/p3-controlled-simulation.md).
 Stop/next-direction decision: [`ADR-0004`](adr/0004-p3-gate-failure-and-precision-stop.md).
 
+Post-run review [`ADR-0005`](adr/0005-statistical-decision-gates.md) показал, что
+проблема шире двух historical failures. Старые point-estimate gates не различали
+compatibility, equivalence и low power, а refinement rule мог проходить при большой
+SE. Retrospective TOST с original margins подтверждает mean, variance и tight drift,
+но flow и open drift остаются inconclusive; family-adjusted refinement equivalence
+почти нигде не установлена. Historical configs/results не меняются и не получают
+post-hoc pass. Полный audit: [`statistical-gate-audit.md`](reports/statistical-gate-audit.md).
+
+### P3S. Statistical gate audit — completed
+
+Для всех текущих и planned gates введена taxonomy:
+
+- deterministic/operational gates без фиктивных p-values;
+- equality через multiplicity-aware TOST/equivalence;
+- directional claims через one-sided superiority/non-inferiority over justified SESOI;
+- refinement через paired/independent equivalence без `tolerance OR SE`;
+- `inconclusive` как обязательный outcome при недостаточной precision;
+- power design до target output с independent seed/session/fold unit.
+
+Reference implementation находится в `ot_micromr.statistical_gates`; policy —
+[`statistical-gates-v1`](protocols/common/statistical-gates.md). Никакие новые
+confirmatory outputs в P3S не создавались.
+
+### P3V. Margin sensitivity и powered validation — completed
+
+До регистрации `SIM-*002` требуется:
+
+1. Для каждого P3 estimand измерить downstream sensitivity Figure 4 peak/rate claims
+   и обосновать equivalence margin; old `2/3/5%` thresholds не переносятся автоматически.
+2. Объявить one primary family, familywise alpha/correction и three-way decisions.
+3. Использовать old P3 seed metrics только как pilot variance; confirmatory seeds должны
+   быть новыми и независимыми.
+4. Сравнить power per compute для большего horizon, большего seed count и более
+   эффективного event/compensator estimator без изменения paper-model semantics.
+5. До запуска заморозить required sample size, maximum compute, stopping rule и новые
+   config IDs. Underpowered design получает `blocked-precision`, а не binary gate.
+
+Рабочий protocol заморожен в
+[`p3v-powered-validation.md`](protocols/synthetic/p3v-powered-validation.md), решение об
+estimators/compute — в
+[`ADR-0006`](adr/0006-p3v-estimators-power-and-compute.md). Зафиксированы новые IDs
+`SIM-MOMENTS-002` и `SIM-UNBALANCED-002`, 20 независимых новых seeds, measured horizon
+`20000`, resolutions `{0.01, 0.005}`, отсутствие optional stopping и раздельные Holm
+families для primary и refinement claims. План работ был следующим:
+
+1. реализовать integrated hazards/compensators и process-parallel runner;
+2. benchmark `1/4/10/20` CPU workers на pilot workload и проверить bitwise equality;
+3. выпустить sensitivity/power table до чтения `SIM-*002` target outputs;
+4. выполнить оба powered runs и применить global family decision;
+5. только при supported decision перейти к `SIM-FIG4-002`.
+
+Pilot sensitivity и compute design выполнены до target runs. Endpoint-only fault injection
+на 20 historical seed labels и horizon `10000` отвергла provisional margins `0.10/0.15`:
+open-drift fault `+15%` менял normalised peak rate с paired 95% interval примерно
+`[-2.14%, -0.34%]`. Датированный amendment уменьшил flow margin до `0.05`, вернул
+точный drift claim к deterministic generator gate и оставил stochastic
+jump-compensator negative control. Power design теперь задаёт horizon `40000` для
+`SIM-MOMENTS-002`, `20000` для `SIM-UNBALANCED-002`, 20 новых seeds и две отдельные
+Holm families. Factual pilot report:
+[`p3v-sensitivity-and-power.md`](reports/p3v-sensitivity-and-power.md).
+
+Оба target run выполнены 2026-08-11 из clean commit
+`9dedb6b44d87933147420a316e445b19cf4c5080` без optional extension:
+
+- `SIM-MOMENTS-002/20260811T184531842286Z-4cb501542645-det`, `1189.46 s`;
+- `SIM-UNBALANCED-002/20260811T190621510298Z-f3c0ff8a3b29-det`, `583.86 s`.
+
+Primary Holm family поддержана: flow equivalence estimate `0.01567`, margin `0.05`,
+adjusted $p=0.00629$; planted unbalanced contrast estimate `0.23015` против minimum
+effect `0.10`, adjusted $p=0.00297$. Refinement family также поддержана: adjusted
+$p=0.01508$ для обеих equivalence checks. Все deterministic/operational gates прошли.
+Global artifact: `outputs/p3v/global-gate.json`; подробности и limitations находятся в
+[`p3v-sensitivity-and-power.md`](reports/p3v-sensitivity-and-power.md). Gate P3V имеет
+status **supported**, переход к P4 разрешён.
+
+До реализации P4 выполнен backend benchmark на representative endpoint band kernel
+(20 paths × 50000 observations × 21 thresholds). Compiled CUDA с включённым transfer
+получил `123.2x` speedup в `float64` относительно vectorized NumPy при максимальной
+ошибке rate `2.9e-13`. Дополнительный 84-million-element benchmark показал, что compiled
+`float32` ещё в `1.26x` быстрее `float64`, уменьшает runtime на 20.7%, сохраняет counts
+точно и имеет maximum rate error `7.19e-6` (`1.82e-7` reference scale). Поэтому policy/threshold post-processing P4
+использует optional PyTorch CUDA backend и `torch.compile`, с `float32` как primary
+candidate и `float64` как regression oracle. CPU event-path generator сохраняет
+измеренный 10-process backend, пока отдельная реализация не докажет end-to-end выигрыш
+без изменения scientific semantics.
+
+Backend decision: [`ADR-0007`](adr/0007-p4-hybrid-cpu-cuda-backend.md).
+
 ### P4. Independent paper-result reconstruction
 
 Задачи:
@@ -566,6 +657,16 @@ Acceptance означает полноту и воспроизводимость
 author primitives/seeds. Опубликованные диапазоны (примерно 20% inward shift, 3--4%
 rate loss at $\theta_D$, 5--6% at $\theta^*$) сравниваются с confidence intervals, но не
 служат tuning objective.
+
+Перед новым Figure 4 run legacy `SIM-FIG4-001` заменяется новым ID. Inward-shift claim
+требует family-adjusted one-sided lower bound выше заранее обоснованного minimum shift;
+rate/loss estimates публикуются с seed-cluster intervals. Numerical refinement проходит
+только equivalence test. Minimum 100 intervals остаётся operational floor и не заменяет
+power analysis.
+
+Непосредственный следующий шаг: реализовать continuous-crossing policy monitor,
+preregister `SIM-FIG4-002` и до target inspection benchmark-ом выбрать CPU/GPU execution
+для полного, а не endpoint-only, kernel.
 
 ### P5. Data feasibility, licensing и frozen universe
 
@@ -593,6 +694,8 @@ Gate P5:
 - raw provenance/hash и data-quality report сохранены;
 - event ordering/recovery semantics однозначны;
 - universe и split freeze датированы до strategy P&L inspection;
+- uncertainty по eligibility/data-quality rates опубликована, planned stochastic gates
+  имеют justified margin/MDE, multiplicity family и достаточную power по independent sessions;
 - при отсутствии подходящего dataset empirical track получает `blocked-data`, но
   synthetic reproduction остаётся валидной и продолжается.
 
@@ -615,9 +718,12 @@ Primary scientific problem practical track — не threshold tuning, а оце�
 
 Stop/gate P6:
 
-- на synthetic data causal estimator должен превосходить preregistered naive baseline по
-  state error и out-of-sample observation likelihood; oracle gap не попадает в feasible
-  backtest;
+- на synthetic data paired, multiplicity-aware one-sided lower bound improvement causal
+  estimator над preregistered naive baseline должен превышать заранее обоснованный
+  minimum useful effect по state error и out-of-sample observation likelihood; oracle
+  gap не попадает в feasible backtest;
+- calibration/equality claims проходят equivalence test; non-significant difference
+  без equivalence получает `inconclusive`;
 - все empirical signals вычисляются online и timestamp audit не находит future access;
 - если filter uncertainty сравнима с или больше option-value margin
   $\theta-(\phi+c)$ и signal не превосходит controls, P&L optimization останавливается
@@ -702,6 +808,8 @@ Statistical protocol:
   до target test;
 - primary one-sided 95% lower confidence bound; secondary family — SPA/Reality Check
   или заранее выбранная FWER/FDR correction;
+- primary family фиксирует minimum economically relevant net P&L rate, target power
+  не ниже 0.90 и число independent sessions до открытия untouched test;
 - uncertainty reported both across time blocks and, где применимо, across instruments;
 - не смешивать folds/instruments как independent ticks;
 - cost stress не менее 1.25x для uncertain fee/slippage components и минимум один
@@ -727,11 +835,15 @@ effect и результат повторяется на untouched data. Ина�
 
 Profitability gate:
 
-1. primary full-net lower 95% bound $>0$;
+1. multiplicity-adjusted primary full-net lower 95% bound выше нуля и заранее
+   обоснованного minimum economically relevant net rate;
 2. positive result после multiplicity-aware selection;
-3. non-negative under preregistered moderate cost and latency stress;
-4. не хуже no-trade/random controls по заранее выбранной risk-adjusted metric;
-5. достаточное число independent sessions и trades по P5 power analysis;
+3. non-inferiority under preregistered moderate cost and latency stress подтверждена
+   относительно заранее заданной downside margin, а не point estimate;
+4. paired superiority над no-trade/random controls подтверждена по заранее выбранной
+   risk-adjusted metric и minimum effect;
+5. достигнут preregistered power/precision budget по independent sessions; иначе status
+   `inconclusive`, независимо от знака point estimate;
 6. нет критического data leakage, fill optimism или single-regime concentration.
 
 ### P10. Synthesis и release
@@ -803,12 +915,20 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 
 ## 9. Ближайший исполняемый шаг
 
-Текущие `SIM-MOMENTS-001` и `SIM-UNBALANCED-001` не перезапускаются с изменёнными
-параметрами. Если synthetic track продолжается, следующий шаг — до нового output
-зарегистрировать dated precision amendment и новые experiment IDs, сохранив primitives,
-estimators, thresholds, original seed prefix и старые failed artifacts. Power analysis
-должен выбрать только дополнительный horizon/seed count для уменьшения uncertainty
-редкой open parity; просмотр P3 результатов нельзя использовать для изменения gate или
-подбора более удобного model regime. Затем сначала повторяется balanced/control ladder.
-Без такого evidence P4 Figure 4 и strategy simulation остаются blocked; empirical
-market-data track также не получает simulator validation от текущего P3.
+Текущие `SIM-MOMENTS-001` и `SIM-UNBALANCED-001` не перезапускаются и не
+переинтерпретируются. Следующий шаг — P3V downstream sensitivity **до** нового target
+output:
+
+1. оценить, как контролируемое смещение mean/variance/flow/drift/ACF меняет Figure 4
+   peak, normalized rate и rate-loss estimands;
+2. из допустимого distortion claim вывести SESOI и stricter numerical margins, а не
+   переносить old heuristic `2/3/5%`;
+3. по old seeds как disjoint pilot оценить cluster variance и сравнить horizon/seeds/
+   estimator варианты по power per compute;
+4. зарегистрировать новые `SIM-*002` configs с entirely new confirmatory seeds,
+   familywise inference, fixed sample/precision stop и statistical-gates-v1 artifacts;
+5. только после powered balanced/control validation решать, разблокирован ли новый
+   Figure 4 experiment.
+
+До этого P4 и strategy simulation blocked. Empirical data-feasibility work может идти
+независимо, но не может ссылаться на текущий P3 как на полностью validated simulator.

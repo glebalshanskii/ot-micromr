@@ -394,9 +394,9 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
         ],
         "figure": [run_directory / "figures" / "figure3.png"],
     }
-    if spec.experiment_id in {"SIM-MOMENTS-001", "SIM-UNBALANCED-001"}:
+    if spec.experiment_id.startswith(("SIM-MOMENTS-", "SIM-UNBALANCED-")):
         figure_name = (
-            "sim-moments.png" if spec.experiment_id == "SIM-MOMENTS-001" else "sim-unbalanced.png"
+            "sim-moments.png" if spec.experiment_id.startswith("SIM-MOMENTS-") else "sim-unbalanced.png"
         )
         paths_by_class.update(
             {
@@ -485,7 +485,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_smoke(spec)
         elif spec.experiment_id == "ANA-FIG3-001":
             evaluation = evaluate_fig3(spec, run_directory)
-        elif spec.experiment_id in {"SIM-MOMENTS-001", "SIM-UNBALANCED-001"}:
+        elif spec.experiment_id.startswith(("SIM-MOMENTS-", "SIM-UNBALANCED-")):
             evaluation = evaluate_simulation(spec, run_directory)
         else:
             raise ExperimentError(f"experiment runner is not implemented: {spec.experiment_id}")
