@@ -1624,7 +1624,7 @@ def _validate_empirical_common(data: Mapping[str, Any]) -> None:
             "minimum_large_tick_lower_bound",
             "expected_asset_count",
             "expected_orderbook_days",
-            "expected_trade_days",
+            "expected_trade_archives",
             "require_clean_tree_for_claim",
             "stop_on_nonfinite_value",
         },
@@ -1635,9 +1635,9 @@ def _validate_empirical_common(data: Mapping[str, Any]) -> None:
     ) != 0.99:
         raise ConfigError("RunSpec.acceptance.minimum_large_tick_lower_bound: expected 0.99")
     expected_counts = {
-        "expected_asset_count": 32,
+        "expected_asset_count": 42,
         "expected_orderbook_days": 10,
-        "expected_trade_days": 10,
+        "expected_trade_archives": 20,
     }
     for key, expected in expected_counts.items():
         if _integer(acceptance, key, "RunSpec.acceptance", positive=True) != expected:

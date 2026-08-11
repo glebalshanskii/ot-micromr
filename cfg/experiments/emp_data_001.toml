@@ -39,10 +39,10 @@ source_kind = "okx_official_historical_archives"
 venue = "OKX"
 dataset = "okx-btc-p5-audit-2024-v1"
 dataset_version = "v1"
-dataset_sha256 = "9221a32d43c253004f027067f7f4543969bc59b2891ea443c59e9ceb50ac0ecd"
+dataset_sha256 = "0e3a6d6e99586b72ccc237bde7f8df4c3651ba4bd4495b391d9a20771c0e3888"
 raw_manifest_path = "data/okx/emp_data_001/raw_manifest.json"
 source_spec_path = "cfg/experiments/emp_data_001_sources.toml"
-source_spec_sha256 = "31489757eb7729c5e5f27efa652647f2f5a7daf42123e3e1274f23a2d20a9633"
+source_spec_sha256 = "16036c12ff5813c41f2ebd574b72f06d99ee093a3f78f447e0b1ba9b18426d45"
 source_catalog_url = "https://www.okx.com/historical-data"
 protocol_path = "docs/protocols/empirical/p5-okx-data-feasibility.md"
 execution_instrument = "BTC-USDT-SWAP"
@@ -79,6 +79,7 @@ metrics = [
   "raw_size_and_sha256",
   "orderbook_endpoint_and_state_quality",
   "trade_ordering_and_value_quality",
+  "trade_archive_utc_alignment",
   "funding_train_coverage",
   "swap_one_two_tick_equal_day_mean",
   "swap_one_two_tick_day_cluster_lower_95",
@@ -103,13 +104,13 @@ endpoint_tolerance_ms = 100
 maximum_initial_snapshot_delay_ms = 60100
 funding_maximum_gap_ms = 28800000
 funding_expected_first_timestamp_ms = 1704067200000
-funding_expected_last_timestamp_ms = 1735660800000
+funding_expected_last_timestamp_ms = 1735632000000
 
 [acceptance]
 minimum_large_tick_lower_bound = 0.99
-expected_asset_count = 32
+expected_asset_count = 42
 expected_orderbook_days = 10
-expected_trade_days = 10
+expected_trade_archives = 20
 require_clean_tree_for_claim = true
 stop_on_nonfinite_value = true
 

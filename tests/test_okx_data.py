@@ -23,9 +23,9 @@ class OkxSourceListTests(unittest.TestCase):
         )
         self.assertEqual(source.dataset_id, "okx-btc-p5-audit-2024-v1")
         self.assertEqual(source.venue, "OKX")
-        self.assertEqual(len(source.assets), 32)
+        self.assertEqual(len(source.assets), 42)
         self.assertEqual(sum(asset.kind == "orderbook_l2" for asset in source.assets), 10)
-        self.assertEqual(sum(asset.kind == "trades" for asset in source.assets), 10)
+        self.assertEqual(sum(asset.kind == "trades" for asset in source.assets), 20)
         self.assertEqual(sum(asset.kind == "funding" for asset in source.assets), 12)
         self.assertEqual(len({asset.asset_id for asset in source.assets}), len(source.assets))
 

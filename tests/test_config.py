@@ -89,7 +89,7 @@ class RunSpecTests(unittest.TestCase):
         self.assertEqual(spec.values["track"], "empirical")
         self.assertEqual(
             spec.values["inputs"]["dataset_sha256"],
-            "9221a32d43c253004f027067f7f4543969bc59b2891ea443c59e9ceb50ac0ecd",
+            "0e3a6d6e99586b72ccc237bde7f8df4c3651ba4bd4495b391d9a20771c0e3888",
         )
 
         data = load_data("emp_data_001.toml")

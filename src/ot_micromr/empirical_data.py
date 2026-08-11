@@ -203,7 +203,19 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
     }
     snapshot_rows = 0
     update_rows = 0
+    source_rows = 0
     pre_snapshot_update_rows = 0
+    seen_snapshot = False
+    quarantine_active = False
+    quarantine_rows = 0
+    quarantine_episodes = 0
+    quarantine_start_timestamp: int | None = None
+    quarantine_duration_ms = 0
+    quarantined_empty_rows = 0
+    quarantined_locked_rows = 0
+    quarantined_crossed_rows = 0
+    invalid_snapshot_rows = 0
+    invalid_update_rows = 0
     first_action: str | None = None
     first_timestamp: int | None = None
     first_snapshot_timestamp: int | None = None
@@ -276,6 +288,7 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
                         raise ValueError("asks and bids must be arrays")
                     if first_action is None:
                         first_action = str(action)
+                    source_rows += 1
                     if first_timestamp is None:
                         first_timestamp = timestamp
                     last_timestamp = timestamp
@@ -289,19 +302,18 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
                     previous_source_timestamp = timestamp
                     if action == "snapshot":
                         snapshot_rows += 1
-                        if first_snapshot_timestamp is None:
-                            first_snapshot_timestamp = timestamp
+                        seen_snapshot = True
                         asks.clear()
                         bids.clear()
                         ask_heap.clear()
                         bid_heap.clear()
                     else:
                         update_rows += 1
-                        if first_snapshot_timestamp is None:
+                        if not seen_snapshot:
                             pre_snapshot_update_rows += 1
                     _apply_levels(ask_levels, asks, ask_heap, 1, tick_scale)
                     _apply_levels(bid_levels, bids, bid_heap, -1, tick_scale)
-                    if first_snapshot_timestamp is None:
+                    if not seen_snapshot:
                         # A daily archive can start inside the source's native snapshot
                         # cycle.  Validate the prefix, but never treat partial deltas as
                         # a reconstructible book.  The first complete snapshot clears it.
@@ -325,6 +337,36 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
                         best_bid = 0
                         ask_size = 0.0
                         bid_size = 0.0
+                    invalid_book = best_bid <= 0 or best_ask <= 0 or best_bid >= best_ask
+                    if invalid_book:
+                        invalid_snapshot_rows += int(action == "snapshot")
+                        invalid_update_rows += int(action == "update")
+                        quarantined_empty_rows += int(best_bid <= 0 or best_ask <= 0)
+                        quarantined_locked_rows += int(
+                            best_bid > 0 and best_ask > 0 and best_bid == best_ask
+                        )
+                        quarantined_crossed_rows += int(
+                            best_bid > 0 and best_ask > 0 and best_bid > best_ask
+                        )
+                        if not quarantine_active:
+                            quarantine_active = True
+                            quarantine_episodes += 1
+                            quarantine_start_timestamp = timestamp
+                        quarantine_rows += 1
+                        continue
+                    if quarantine_active:
+                        if action != "snapshot":
+                            # Only a complete valid snapshot can make state trustworthy
+                            # again after an impossible book observation.
+                            quarantine_rows += 1
+                            continue
+                        if quarantine_start_timestamp is None:
+                            raise ValueError("quarantine start timestamp is missing")
+                        quarantine_duration_ms += timestamp - quarantine_start_timestamp
+                        quarantine_active = False
+                        quarantine_start_timestamp = None
+                    if action == "snapshot" and first_snapshot_timestamp is None:
+                        first_snapshot_timestamp = timestamp
                     buffers[0].append(timestamp)
                     buffers[1].append(best_bid)
                     buffers[2].append(best_ask)
@@ -341,6 +383,9 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
         raise ExperimentError(f"empty order-book archive: {path}")
     if first_snapshot_timestamp is None:
         raise ExperimentError(f"order-book archive contains no usable snapshot: {path}")
+    quarantine_unrecovered = quarantine_active
+    if quarantine_start_timestamp is not None:
+        quarantine_duration_ms += last_timestamp - quarantine_start_timestamp + 1
     valid_rows = int(accumulator["valid_book_rows"])
     support_rows = int(accumulator["one_tick_rows"]) + int(accumulator["two_tick_rows"])
     day_start = _utc_day_start_milliseconds(date_text)
@@ -352,10 +397,20 @@ def _audit_orderbook_worker(task: Mapping[str, Any]) -> dict[str, Any]:
         "instrument": instrument,
         "date": date_text,
         "rows": int(accumulator["rows"]),
-        "source_rows": int(accumulator["rows"]) + pre_snapshot_update_rows,
+        "source_rows": source_rows,
         "snapshot_rows": snapshot_rows,
         "update_rows": update_rows,
         "pre_snapshot_update_rows": pre_snapshot_update_rows,
+        "quarantine_rows": quarantine_rows,
+        "quarantine_fraction": quarantine_rows / source_rows,
+        "quarantine_episodes": quarantine_episodes,
+        "quarantine_duration_ms": quarantine_duration_ms,
+        "quarantine_unrecovered": quarantine_unrecovered,
+        "quarantined_empty_rows": quarantined_empty_rows,
+        "quarantined_locked_rows": quarantined_locked_rows,
+        "quarantined_crossed_rows": quarantined_crossed_rows,
+        "invalid_snapshot_rows": invalid_snapshot_rows,
+        "invalid_update_rows": invalid_update_rows,
         "first_action": first_action,
         "first_timestamp_ms": first_timestamp,
         "first_snapshot_timestamp_ms": first_snapshot_timestamp,
@@ -441,6 +496,8 @@ def _audit_trades_worker(task: Mapping[str, Any]) -> dict[str, Any]:
     }
     first_timestamp: int | None = None
     last_timestamp: int | None = None
+    first_trade_id: int | None = None
+    last_trade_id: int | None = None
     previous_timestamp: int | None = None
     previous_trade_id: int | None = None
 
@@ -491,7 +548,9 @@ def _audit_trades_worker(task: Mapping[str, Any]) -> dict[str, Any]:
                         side = 1 if row["side"] == "buy" else -1 if row["side"] == "sell" else 0
                         if first_timestamp is None:
                             first_timestamp = timestamp
+                            first_trade_id = trade_id
                         last_timestamp = timestamp
+                        last_trade_id = trade_id
                         timestamps.append(timestamp)
                         trade_ids.append(trade_id)
                         sides.append(side)
@@ -505,6 +564,9 @@ def _audit_trades_worker(task: Mapping[str, Any]) -> dict[str, Any]:
     flush()
     if first_timestamp is None or last_timestamp is None:
         raise ExperimentError(f"empty trade archive: {path}")
+    archive_label_start = _utc_day_start_milliseconds(str(task["date"]))
+    archive_cut_start = archive_label_start - 8 * 60 * 60 * 1000
+    archive_cut_end = archive_cut_start + DAY_MILLISECONDS - 1
     return {
         "asset_id": str(task["asset_id"]),
         "kind": "trades",
@@ -514,6 +576,15 @@ def _audit_trades_worker(task: Mapping[str, Any]) -> dict[str, Any]:
         **counts,
         "first_timestamp_ms": first_timestamp,
         "last_timestamp_ms": last_timestamp,
+        "first_trade_id": first_trade_id,
+        "last_trade_id": last_trade_id,
+        "archive_cut_start_ms": archive_cut_start,
+        "archive_cut_end_ms": archive_cut_end,
+        "archive_start_lag_ms": first_timestamp - archive_cut_start,
+        "archive_end_lag_ms": archive_cut_end - last_timestamp,
+        "timestamps_within_archive_cut": (
+            first_timestamp >= archive_cut_start and last_timestamp <= archive_cut_end
+        ),
         "elapsed_seconds": time.perf_counter() - started,
     }
 
@@ -789,6 +860,7 @@ def evaluate_empirical_data(spec: RunSpec, run_directory: Path) -> EmpiricalEval
         and row["empty_book_rows"] == 0
         and row["locked_rows"] == 0
         and row["crossed_rows"] == 0
+        and not row["quarantine_unrecovered"]
         for row in orderbook_rows
     )
     trade_structural_pass = all(
@@ -796,7 +868,46 @@ def evaluate_empirical_data(spec: RunSpec, run_directory: Path) -> EmpiricalEval
         and row["nonincreasing_trade_id_rows"] == 0
         and row["invalid_side_rows"] == 0
         and row["nonpositive_size_rows"] == 0
+        and row["timestamps_within_archive_cut"]
         for row in trade_rows
+    )
+    expected_trade_labels: dict[str, set[str]] = {
+        "BTC-USDT-SWAP": set(),
+        "BTC-USDT": set(),
+    }
+    for date_text in evaluation["audit_dates"]:
+        value = datetime.strptime(str(date_text), "%Y-%m-%d").date()
+        expected_trade_labels["BTC-USDT-SWAP"].update(
+            (value.isoformat(), (value + timedelta(days=1)).isoformat())
+        )
+    for date_text in evaluation["spot_alignment_dates"]:
+        value = datetime.strptime(str(date_text), "%Y-%m-%d").date()
+        expected_trade_labels["BTC-USDT"].update(
+            (value.isoformat(), (value + timedelta(days=1)).isoformat())
+        )
+    observed_trade_labels = {
+        instrument: {
+            str(row["date"]) for row in trade_rows if row["instrument"] == instrument
+        }
+        for instrument in expected_trade_labels
+    }
+    trade_pair_ordering_pass = True
+    for instrument in expected_trade_labels:
+        instrument_rows = sorted(
+            (row for row in trade_rows if row["instrument"] == instrument),
+            key=lambda row: str(row["date"]),
+        )
+        trade_pair_ordering_pass = trade_pair_ordering_pass and all(
+            int(left["last_timestamp_ms"]) <= int(right["first_timestamp_ms"])
+            and int(left["last_trade_id"]) < int(right["first_trade_id"])
+            for left, right in zip(instrument_rows, instrument_rows[1:])
+        )
+    trade_archive_alignment_pass = (
+        all(
+            observed_trade_labels[instrument] == labels
+            for instrument, labels in expected_trade_labels.items()
+        )
+        and trade_pair_ordering_pass
     )
     spot_dates = {
         str(row["date"])
@@ -833,6 +944,7 @@ def evaluate_empirical_data(spec: RunSpec, run_directory: Path) -> EmpiricalEval
         ),
         "orderbook_structural_quality": orderbook_structural_pass,
         "trade_structural_quality": trade_structural_pass,
+        "trade_archive_utc_alignment": trade_archive_alignment_pass,
         "funding_train_coverage": funding_pass,
         "large_tick_day_cluster_lower_bound": float(
             bootstrap["one_sided_95_percent_lower_bound"]
@@ -842,8 +954,8 @@ def evaluate_empirical_data(spec: RunSpec, run_directory: Path) -> EmpiricalEval
         "expected_asset_count": len(verified_rows) == int(acceptance_spec["expected_asset_count"]),
         "expected_orderbook_days": len(orderbook_rows)
         == int(acceptance_spec["expected_orderbook_days"]),
-        "expected_trade_days": len(trade_rows)
-        == int(acceptance_spec["expected_trade_days"]),
+        "expected_trade_archives": len(trade_rows)
+        == int(acceptance_spec["expected_trade_archives"]),
     }
     total_l2_rows = sum(int(row["rows"]) for row in orderbook_rows)
     total_trade_rows = sum(int(row["rows"]) for row in trade_rows)
