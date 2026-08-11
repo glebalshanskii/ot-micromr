@@ -1,0 +1,754 @@
+# План воспроизведения Optimal Trading of Microstructure Mean Reversion
+
+> **Обновлено:** 2026-08-11
+>
+> **Ветка:** `docs/reproduction-plan`
+>
+> **Текущий статус:** P0 — анализ статьи и планирование завершены
+>
+> **Следующий шаг:** P1 — зафиксировать mathematical/data/experiment contracts и
+> preregister synthetic smoke run до написания симулятора
+
+## 1. Цель, scope и критерий научного утверждения
+
+Проект состоит из двух явно разделённых треков:
+
+1. **Paper-faithful reproduction** — независимо реализовать аналитические формулы,
+   exact jump model и Monte Carlo проверки статьи
+   [`arXiv:2608.00885v1`](https://arxiv.org/abs/2608.00885v1).
+2. **Practical-local empirical extension** — построить causal-версию стратегии для
+   реальных event-level quotes/trades, провести backtests без look-ahead и определить,
+   при каких наблюдаемых режимах и заранее заданных параметрах стратегия имеет
+   положительный net edge после всех доступных издержек.
+
+Второй трек не является буквальным воспроизведением статьи: статья теоретическая,
+не использует рыночный dataset и предполагает наблюдаемый latent efficient price.
+
+### 1.1. Что означает «воспроизвести»
+
+- Аналитические результаты получены независимым кодом и совпадают с формулами.
+- Stochastic simulator удовлетворяет model invariants и воспроизводит теоретические
+  moments в пределах заранее заданной Monte Carlo uncertainty.
+- Каждый рисунок классифицирован как `reproduced`, `partially-reproduced`,
+  `not-reproduced` или `underdetermined`; отрицательный результат не меняет protocol
+  задним числом.
+- Результат имеет полный provenance: commit, config, seed, environment, hardware,
+  runtime и artifact paths.
+
+### 1.2. Что означает «стратегия доходна»
+
+Основной empirical claim разрешён только для **однократно открытого, заранее
+замороженного holdout** и означает одновременно:
+
+- средняя net P&L rate положительна после bid--ask spread, taker fees, известных
+  exchange/regulatory costs, borrow/funding и реалистичного slippage/latency scenario;
+- нижняя граница одностороннего 95% block-bootstrap confidence interval для средней
+  daily/session net P&L выше нуля;
+- результат не сводится к одному instrument, короткому regime или одной выбранной
+  post hoc parameter cell и выдерживает заранее заданные cost/latency stresses;
+- учтены все проверенные variants и multiple testing; secondary findings помечены
+  exploratory, если для них нет multiplicity correction или независимой проверки.
+
+Если gate не пройден, корректный итог — «доходность не подтверждена при проверенных
+условиях», а не дополнительная настройка на holdout.
+
+### 1.3. Вне текущего scope
+
+- live trading и отправка заявок;
+- обещание доходности или инвестиционная рекомендация;
+- доказательство глобальной оптимальности band policy на exact jump process — в статье
+  это открытая conjecture;
+- large-order impact, market making, strategic response liquidity providers и portfolio
+  allocation до прохождения one-lot baseline;
+- использование платного API, приватных данных или данных с неясной лицензией в
+  default path.
+
+## 2. Зафиксированный разбор статьи
+
+Полная bibliographic запись и provenance локального PDF находятся в
+[`docs/papers/registry.md`](papers/registry.md). Локальный PDF побайтно совпадает с
+official arXiv v1; SHA-256:
+`fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba`.
+
+### 2.1. Central claim и novelty
+
+Статья строит limit-order-book model для liquid large-tick asset, в котором transient
+microstructure gap
+
+$$
+G_t = M_t - X_t
+$$
+
+между displayed mid $M_t$ и latent efficient price $X_t$ mean-reverts благодаря
+state-dependent book flow. Parity mid на half-tick grid полностью определяет, равен ли
+spread одному или двум ticks, поэтому непрерывное состояние сводится к $G$ плюс parity
+bit. При balanced-response condition условное среднее и stationary autocovariance gap
+в точности совпадают с Ornstein--Uhlenbeck process, хотя sample paths остаются jump
+paths. На соответствующем Gaussian surrogate symmetric flip band имеет closed-form
+оптимум.
+
+Новизна — соединение endogenous queue-reactive jump book с optimal switching для
+mean-reversion signal и вывод простой one-dimensional band formula. Это не empirical
+демонстрация прибыльной стратегии.
+
+### 2.2. Модель и проверяемые формулы
+
+Для tick size $\delta$, bid $B_t\in\delta\mathbb Z$ и
+$S_t\in\{\delta,2\delta\}$:
+
+$$
+M_t=B_t+\frac{S_t}{2}\in\frac{\delta}{2}\mathbb Z.
+$$
+
+Tight book соответствует $M_t\in\delta\mathbb Z+\delta/2$, open book —
+$M_t\in\delta\mathbb Z$. Efficient price exogenous:
+
+$$
+dX_t=\sigma_X\,dZ_t.
+$$
+
+В tight state действуют slide и open events, в open state — close events. Для каждого
+типа $i\in\{s,o,c\}$ directional intensities имеют one-sided linear ramps
+
+$$
+\lambda_i^\uparrow=\mu_i+\frac{2\alpha_i}{\delta}G^-,\qquad
+\lambda_i^\downarrow=\mu_i+\frac{2\alpha_i}{\delta}G^+,
+$$
+
+с соответствующим state indicator. Slides меняют $M$ на $\pm\delta$, opens/closes —
+на $\pm\delta/2$. Balanced response
+
+$$
+2\alpha_s+\alpha_o=\alpha_c=: \alpha
+$$
+
+даёт точный drift и conditional mean
+
+$$
+\mathbb E[dG_t\mid\mathcal F_{t-}]=-\alpha G_{t-}\,dt,
+\qquad
+\mathbb E[G_{t+h}\mid\mathcal F_t]=G_t e^{-\alpha h}.
+$$
+
+В stationary regime
+
+$$
+\mathbb E_\pi[G]=0,\qquad
+s_G^2=\operatorname{Var}_\pi(G)=\frac{\sigma_X^2+\sigma_M^2}{2\alpha},
+\qquad
+\operatorname{Cov}_\pi(G_t,G_{t+h})=s_G^2e^{-\alpha h},
+$$
+
+где
+$\sigma_M^2=\mathbb E_\pi\!\left[\sum_m\lambda^m\Delta_m^2\right]$.
+Из этих identities также следует permanent-component forecast
+
+$$
+\lim_{h\to\infty}\mathbb E[M_{t+h}\mid\mathcal F_t]=X_t.
+$$
+
+Статья дополнительно ограничивает неявный $s_G$ через baseline jump variance
+
+$$
+\sigma_{M,0}^2=\delta^2\left[(1-p)
+\left(2\mu_s+\frac{\mu_o}{2}\right)+p\frac{\mu_c}{2}\right],
+\qquad
+b=\delta\left(\alpha-\frac{\alpha_o}{2}\right),
+$$
+
+$$
+\sqrt{\frac{\sigma_X^2+\sigma_{M,0}^2}{2\alpha}}
+\le s_G\le
+\frac{b+\sqrt{b^2+8\alpha(\sigma_X^2+\sigma_{M,0}^2)}}{4\alpha}.
+$$
+
+Стратегия после первого входа всегда держит $q_t\in\{-1,+1\}$ и **переворачивает**
+позицию: target $+1$ при $G_t\le-\theta$, target $-1$ при
+$G_t\ge\theta$, иначе сохраняет предыдущую позицию. Первый entry равен одному lot,
+каждый последующий flip — двум lots. Это не обычная flat-between-trades pairs strategy.
+
+Exact jump-model band rate:
+
+$$
+R(\theta)=
+\frac{2\left(\mathbb E_{\pi_F}|G_F|-\mathbb E_{\pi_F}\phi_F\right)}{m(\theta)},
+\qquad
+\theta\le\mathbb E_{\pi_F}|G_F|<\theta+\delta.
+$$
+
+Gaussian moment-matched surrogate задаётся как
+
+$$
+d\widetilde G_t=-\alpha\widetilde G_t\,dt
++\sqrt{2\alpha}\,s_G\,d\widetilde Z_t.
+$$
+
+При frozen tight-book half-spread $\phi=\delta/2$:
+
+$$
+\widetilde m(\theta)
+=\frac{\pi}{\alpha}\operatorname{erfi}
+\left(\frac{\theta}{\sqrt 2s_G}\right),
+\qquad
+\widetilde R(\theta)=\frac{2(\theta-\phi)}{\widetilde m(\theta)}.
+$$
+
+Для $u=\theta/s_G$ и $\gamma=\phi/s_G$ exact surrogate optimum $u_D$ —
+единственный root
+
+$$
+u-\gamma=\sqrt 2\,D\left(\frac{u}{\sqrt 2}\right),
+$$
+
+где $D$ — Dawson function. Его large-threshold approximation:
+
+$$
+\theta^*(\theta^*-\phi)=s_G^2,
+\qquad
+\theta^*=\frac{\phi+\sqrt{\phi^2+4s_G^2}}{2}.
+$$
+
+В optimum surrogate rate равен
+
+$$
+R_D^*=\alpha s_G\sqrt{\frac{2}{\pi}}e^{-u_D^2/2}.
+$$
+
+Myopic threshold $\theta=\phi$ имеет нулевую surrogate reward. Если дополнительная
+per-lot cost в price units равна $c$, paper model допускает заменить $\phi$ на
+$\phi+c$; для фиксированного $\theta$ surrogate net rate положительна лишь при
+$\theta>\phi+c$. Это теоретическое необходимое условие внутри surrogate, а не
+доказательство empirical profitability.
+
+### 2.3. Уровни доказанности
+
+| Claim | Статус в статье | Что проверяем |
+|---|---|---|
+| Parity lock spread/mid | Exact grid identity | Pathwise invariant и event transitions |
+| Linear reversion under balance | Exact theorem | Conditional drift regression по parity и $G$ |
+| Ergodicity, variance и exponential ACF | Exact theorem | Stationary Monte Carlo moments и confidence bands |
+| Full positions suffice | Exact pathwise layer result | Wealth/accounting identity; не численная optimality claim |
+| Threshold optimality | Theorem только на Gaussian surrogate | Numeric optimizer против Dawson root |
+| Threshold optimality на jump process | Conjecture | Не заявлять как доказанный результат; только band sweep |
+| Overshoot reward error | Rigorous bound $<\delta$ | Pathwise overshoot test |
+| Timing error $O(\delta/\theta)$ | Heuristic | Timestep/refinement и parameter sweep; не выдавать за theorem |
+| Frozen tight-spread cost error | Controlled occupancy argument | Realized fill-state cost против frozen cost |
+| Figure 4 optimum внутри $\theta_D$ примерно на 20% | Monte Carlo claim | Independent reconstruction, не forced acceptance |
+| Profitability на реальном рынке | В статье не исследована | Отдельный causal out-of-sample protocol |
+
+### 2.4. Что раскрыто и чего не хватает
+
+| Поле | Статья v1 |
+|---|---|
+| Dataset, exchange, instrument, period | Отсутствуют; работа theoretical |
+| Preprocessing/features | Не применимо к paper simulation; empirical contract отсутствует |
+| Official code/data | Не заявлены и не найдены на 2026-08-11 |
+| Official source archive | Только `main.tex`, `00README.json` и четыре готовых PDF figures; generator отсутствует, figure metadata указывает Matplotlib 3.10.8 |
+| Simulator algorithm/discretization | Не раскрыты достаточно для exact numeric replication |
+| Primitive parameters Figures 2, 4, 5 | Не раскрыты; figures 2/5 названы illustrative and uncalibrated |
+| Figure 4 disclosed settings | Только $\gamma\approx0.28,0.36,0.47$, sweep ramp slopes при fixed unnamed baselines, bands = 1 SE |
+| Seeds, paths, horizon, burn-in | Не указаны |
+| Hardware, runtime, precision | Не указаны |
+| Statistical protocol | Figure 4 сообщает 1 SE; число replications и construction не указаны |
+| Optimizer/scheduler/training budget | Не применимо: trainable ML model отсутствует |
+| Peer review | Не указан; preliminary arXiv v1 |
+
+Следствие: Figure 3 можно воспроизвести численно из closed forms; Figures 2 и 5 —
+структурно, но не pixel/numeric-identically; Figure 4 — только independent
+reconstruction с явно выбранным protocol. Exact reproduction Figure 4 остаётся
+`underdetermined`, пока не появятся авторские configs/code.
+
+### 2.5. Главные assumptions и failure modes
+
+1. $X$ — exogenous Brownian martingale и в теории наблюдаем, хотя на рынке latent.
+2. Актив применим к two-valued spread regime; wider, locked/crossed и illiquid books
+   лежат вне модели.
+3. Balanced response устраняет parity-dependent drift; на данных он может не выполняться.
+4. Trader мал, немедленно исполняется at touch и не меняет intensities; latency,
+   adverse selection и market impact отсутствуют.
+5. Единственная paper cost — realized half-spread; fees, slippage, borrow/funding и
+   session boundaries отсутствуют.
+6. Stationarity и constant $(\alpha,s_G)$ могут нарушаться intraday и между regimes.
+7. OU surrogate совпадает только по conditional mean и covariance, не по first-passage
+   law; jump overshoot существенен при большом $\delta/\theta$.
+8. Always-full risk-neutral objective максимизирует expected long-run P&L rate, не
+   utility, Sharpe, drawdown или capital efficiency.
+9. Формулировка paper «one number governs everything» относится к normalized OU
+   surrogate. Exact jump dynamics дополнительно зависят от $\delta/s_G$, baseline
+   intensities, decomposition slopes, $\sigma_X^2/\sigma_M^2$ и open occupancy.
+10. В Figure 4 $\gamma\approx0.28$--$0.47$ при $\phi=\delta/2$ означает
+    $\delta/s_G=2\gamma\approx0.56$--$0.94$; заявленный asymptotic regime
+    $\delta\ll\theta-\phi$ там не очевиден и должен быть отдельной convergence check.
+11. Fast-parity $\alpha_{eff}$ при нарушенном balance — averaging approximation, не
+    замена exact theorem; sweep $\gamma$ через ramp slopes меняет higher moments вместе
+    с $\gamma$.
+12. Последующие two-lot flips совместимы с inventory cap one lot на сторону, но требуют
+    вдвое большей executable size и capacity, чем первый entry.
+13. Empirical search легко переобучить через instrument, period, filter и threshold
+   selection; нужен nested chronological design и untouched holdout.
+
+## 3. Research questions и preregistered hypotheses
+
+Формальные hypotheses будут перенесены без изменения смысла в соответствующие
+protocols до запусков.
+
+- **RQ1 / H-SYN-1:** реализованный jump model сохраняет parity, balanced conditional
+  drift, stationary variance identity и exponential ACF в Monte Carlo uncertainty.
+- **RQ2 / H-SYN-2:** Dawson root максимизирует независимо вычисленную surrogate rate;
+  large-threshold root близок к нему в заявленном regime $\gamma\gtrsim0.4$.
+- **RQ3 / H-SYN-3:** внутри symmetric band class exact jump optimum систематически
+  сдвигается внутрь относительно $\theta_D$ из-за overshoot. Направление
+  preregistered; диапазон paper claim не превращается в acceptance target.
+- **RQ4 / H-EST-1:** causal filter восстанавливает usable gap signal на synthetic data
+  и превосходит заранее выбранные causal baselines; retrospective smoother служит
+  только diagnostic oracle и никогда не генерирует backtest orders.
+- **RQ5 / H-EMP-1:** после costs net edge зависит прежде всего от effective
+  $\gamma$, reversion speed, filter uncertainty, open-book occupancy, latency и
+  balance violation. Знак empirical result заранее не предполагается.
+- **RQ6 / H-EMP-2:** theory-derived $\theta_D$ является competitive baseline; tuned
+  multiplier допускается только в nested validation и должен подтверждаться на untouched
+  test.
+
+## 4. Planned contracts и структура artifacts
+
+### 4.1. Code boundaries
+
+Будущая реализация должна разнести:
+
+- immutable config DTOs и serializable `RunSpec`;
+- paper primitives и immutable domain state;
+- отдельный mutable simulator/runtime state;
+- analytical surrogate/Dawson solver;
+- jump simulator и random-number streams;
+- causal state estimation;
+- raw market adapters и canonical event schema;
+- strategy policy, execution model и accounting;
+- metrics/statistics/report generation;
+- artifact store с atomic run manifest.
+
+Точный import-package path нужно зафиксировать в ADR P1: `AGENTS.md` задаёт
+`src/ot-micromr/`, тогда как Python import namespace не может содержать hyphen. До ADR
+не создавать расходящиеся package layouts.
+
+### 4.2. Configuration contract
+
+Каждый executable config в `cfg/experiments/` должен полностью задавать:
+
+- `experiment_id`, `track`, `mode` (`paper-faithful` или `practical-local`);
+- model/simulator/filter/strategy/execution parameters и units;
+- seed или ordered seed list;
+- dataset ID, immutable version/hash, venue, symbol, tick/contract specification;
+- chronological split boundaries и timezone/session policy;
+- cost and latency scenarios;
+- metrics, statistical tests, bootstrap scheme и acceptance thresholds;
+- output root, code commit, environment lock/hash, hardware and precision.
+
+Resolved config и runtime-derived fields сохраняются в run manifest; config после
+запуска не переписывается под результат.
+
+### 4.3. Canonical market-event contract
+
+До загрузки данных ADR должен определить как минимум:
+
+- exchange timestamp, receive timestamp (если доступен), sequence number, venue,
+  symbol и session;
+- best bid/ask prices and sizes до и после event, tick size и contract multiplier;
+- trades, quote updates, locked/crossed states, gaps in sequence и recovery semantics;
+- детерминированную классификацию `slide/open/close/other` и simultaneous-event policy;
+- causal feature timestamps: ни один signal value не может использовать payload,
+  опубликованный после decision time;
+- corporate actions/rolls/funding/borrow для выбранного asset class;
+- raw data неизменяемы и не коммитятся; processed dataset получает version/hash и
+  data-quality report.
+
+### 4.4. Artifact layout
+
+- `docs/protocols/synthetic/` — preregistered analytical/simulation runs;
+- `docs/protocols/empirical/` — data, estimation, backtest и statistical protocols;
+- `docs/adr/` — architecture, simulator semantics, data contract, costs и acceptance
+  decisions;
+- `docs/reports/` — фактические results/limitations/provenance;
+- `cfg/experiments/` — executable contracts;
+- `outputs/<experiment_id>/<run_id>/` — resolved config, manifest, raw metrics, logs,
+  plots и optional checkpoints/filter state; heavy artifacts остаются untracked.
+
+## 5. Порядок работ и acceptance gates
+
+Статус scientific claims ведётся отдельно от completion stage: research stage может быть
+завершён с результатом `not-reproduced` или `negative`, если protocol исполнен честно.
+
+| Stage | Track | Status | Completion gate |
+|---|---|---|---|
+| P0. Source audit и план | Common | **completed** | PDF/source проверены, unknowns и scope зафиксированы |
+| P1. Contracts и protocols | Common | **next** | ADRs, schemas, configs и acceptance thresholds приняты до runs |
+| P2. Analytical executable baseline | Synthetic | pending | Closed forms, tests, smoke run и Figure 3 reproduction |
+| P3. Jump simulator и theorem checks | Synthetic | pending | Invariants, timestep convergence, moments/ACF report |
+| P4. Figures 2/4/5 и paper report | Synthetic | pending | Claim matrix с reproduced/not-reproduced/underdetermined |
+| P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
+| P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
+| P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
+| P8. Nested development/validation | Empirical | pending | Заморожена одна primary strategy и limited secondary set |
+| P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
+| P10. Synthesis/release | Common | pending | Plan, ADRs, reports, README и provenance согласованы |
+
+### P0. Source audit и план — completed
+
+Выполнено:
+
+- подтверждены version, metadata, primary URL, license и hash PDF;
+- проверены official source archive и отсутствие заявленного official code/data;
+- извлечены claims, equations, assumptions и открытые вопросы;
+- literal replication отделена от нового empirical extension;
+- создан paper registry и настоящий канонический план.
+
+Проверки P0 — только documentation/source checks; experiment results ещё не получены.
+
+### P1. Mathematical, simulation и experiment contracts — next
+
+Задачи:
+
+1. Создать ADR для scope/units/package layout и `RunSpec`/artifact schema.
+2. Создать ADR simulator time/event semantics. Brownian-dependent intensities не дают
+   тривиального exact next-event sampler; выбранная approximation должна иметь явный
+   error control, а не называться exact simulation algorithm без доказательства.
+3. Preregister `docs/protocols/synthetic/paper-reproduction.md`: primitives, seed list,
+   burn-in, horizon, discretization/refinement, estimators, confidence intervals и
+   tolerances.
+4. Завести минимальные configs `paper_smoke`, `figure3`, `moment_checks`, `figure4`.
+5. Зафиксировать default numerical precision и dependency rationale; зависимости
+   добавлять только через `uv add`; отдельно проверить поддержку Python 3.14 у
+   scientific stack и оформить ADR, если project constraint нужно менять.
+6. Сохранить Figure 4 as `underdetermined`; запрос author configs/code возможен только
+   как отдельное внешнее действие после согласия пользователя.
+7. Обновить `.gitignore` до первого artifact run: исключить `outputs/`, raw/processed
+   datasets, checkpoints, logs, secrets и private artifacts, не скрывая configs/reports.
+
+Default Monte Carlo plan: один deterministic smoke seed и не менее 20 независимых seeds
+для confirmatory synthetic results; burn-in и horizon задаются в units $1/\alpha$ после
+power/ESS calculation. Изменение этого числа требует dated protocol amendment до
+просмотра target result.
+
+Gate P1: все choices, способные изменить result, записаны до первого full run; smoke
+config сериализуется без hidden defaults.
+
+### P2. Minimal analytical baseline
+
+Задачи:
+
+1. Реализовать `erfi` passage time, Dawson FOC, robust bracketing/root solve,
+   $\theta^*$ и rate curves.
+2. Начать с одного dimensionless config по $(\alpha,s_G,\gamma)$ и одной метрики:
+   residual Dawson FOC в найденном optimum.
+3. Добавить unit tests для scaling, units, boundary $u_D>\gamma$, uniqueness,
+   derivative sign и asymptotic root.
+4. Независимо построить Figure 3 и табулировать threshold/rate discrepancy по $\gamma$.
+5. Сохранить resolved config, numerical library versions и figure data отдельно от PNG.
+
+Reference checkpoints из независимо вычисляемых paper formulas, которые нужно
+пересчитать нашим кодом, а не hardcode как output:
+
+| $\gamma$ | $u_D$ | $u^*$ | rate loss at $u^*$ |
+|---:|---:|---:|---:|
+| 0.05 | 0.541693 | 1.025312 | 8.71% |
+| 0.28 | 1.006563 | 1.149752 | 1.29% |
+| 0.40 | 1.155873 | 1.219804 | 0.30% |
+| 1.70 | 2.264976 | 2.162440 | 2.30% |
+
+Acceptance:
+
+- closed forms согласованы независимыми direct integration/optimization checks;
+- double-precision unit identities проходят с preregistered tolerance (ориентир
+  `rtol <= 1e-10`, окончательно фиксируется в P1);
+- myopic $\widetilde R(\phi)=0$ и rate стремится к нулю на дальнем конце grid;
+- reproduce/contradict status для claims Figure 3 дан с numeric table, не только plot;
+- проходят `uv run python main.py`, package CLI и relevant unit tests после появления
+  package/CLI.
+
+### P3. Exact-model dynamics и controlled numerical simulator
+
+Задачи:
+
+1. Реализовать six event types, Brownian $X$, parity-locked spread, state-dependent
+   intensities и event log.
+2. Начать с adaptive small-step scheme с ограничением total event probability на step,
+   либо обосновать более точный sampler в ADR. Для full result сравнить минимум две
+   resolutions; все results называть simulation of the exact model, но не exact sampler,
+   если есть time discretization. Continuous band crossings от Brownian $X$ между grid
+   points учитывать Brownian-bridge/first-passage mechanism либо отдельно измерять
+   missed-crossing bias при refinement.
+3. Добавить pathwise tests: nonnegative intensities, allowed jump sizes, no illegal parity
+   transition, at most one event per discretized step, deterministic replay by seed,
+   overshoot $<\delta$ и wealth-marking identity $W-W^X=qG$.
+4. На stationary paths проверить conditional drift отдельно для tight/open parity,
+   $\mathbb E G$, variance identity, $p$ flow balance и ACF decay.
+5. Проверить balanced и deliberately unbalanced control; менять один factor за run.
+
+Acceptance:
+
+- ни одного invariant violation в smoke/full logs;
+- halving step меняет primary estimates не больше preregistered numerical tolerance или
+  их Monte Carlo uncertainty;
+- theoretical drift/moments лежат в simultaneous confidence bands на preregistered bins
+  и lags; exact thresholds не подгоняются после просмотра;
+- negative/unbalanced control обнаруживает parity split ожидаемого знака;
+- report содержит effective sample size, seeds, burn-in, horizon, runtime и hardware.
+
+### P4. Independent paper-result reconstruction
+
+Задачи:
+
+1. Figure 2: structural sample path с явно выбранными illustrative primitives; не
+   называть pixel-identical reproduction.
+2. Figure 4: sweep $\theta/\theta_D$ для preregistered parameter families, включая
+   $\gamma\approx0.28,0.36,0.47$; оценить true band-class optimum, 1 SE, overshoot,
+   loss at $\theta_D$ и $\theta^*$.
+3. Проверить refinement по $\delta/\theta$, open occupancy $p$, ramp share и horizon.
+4. Figure 5: pathwise signal, fills, two-lot flips, spread-aware bands и both wealth
+   markings; slope comparison только после stationary burn-in. Figure 5 использует
+   parity-dependent $\theta_D(S_t)$, тогда как main closed-form analysis freezing делает
+   $\phi=\delta/2$; это отдельная strategy variant/ablation, не тот же config.
+5. Выпустить `docs/reports/paper-reproduction.md` и обновить claim matrix/status здесь.
+
+Acceptance означает полноту и воспроизводимость проверки, а не обязательное совпадение.
+Для Figure 4 сохраняется label `independent partial reproduction`, пока неизвестны
+author primitives/seeds. Опубликованные диапазоны (примерно 20% inward shift, 3--4%
+rate loss at $\theta_D$, 5--6% at $\theta^*$) сравниваются с confidence intervals, но не
+служат tuning objective.
+
+### P5. Data feasibility, licensing и frozen universe
+
+До выбора data source empirical код не должен делать implicit network downloads.
+
+Задачи:
+
+1. Выбрать licensed event-level L1/L2 quotes и trades с sequence/timestamp semantics,
+   достаточными для восстановления touch и marketable fills. Aggregated candles не
+   подходят для primary test.
+2. До holdout screening зафиксировать market/venue, candidate universe, calendar,
+   contract/tick history, timezone, sessions и asset-specific costs.
+3. На development interval проверить large-tick eligibility: occupancy one/two-tick
+   spread, fraction wider/locked/crossed, update rate, touch depth, gaps and bad records.
+   Numeric eligibility cutoffs preregister до universe screening; paper-faithful и
+   relaxed practical cohorts хранить отдельно.
+4. Сделать immutable chronological train/validation/test splits. Test не используется
+   для instrument eligibility, feature/filter choice или parameter search.
+5. Провести power/precision analysis по числу independent sessions/trades; если данных
+   недостаточно, результаты пометить exploratory.
+
+Gate P5:
+
+- license разрешает локальный research use и потенциальную публикацию derived metrics;
+- raw provenance/hash и data-quality report сохранены;
+- event ordering/recovery semantics однозначны;
+- universe и split freeze датированы до strategy P&L inspection;
+- при отсутствии подходящего dataset empirical track получает `blocked-data`, но
+  synthetic reproduction остаётся валидной и продолжается.
+
+### P6. Causal estimation of latent efficient price
+
+Primary scientific problem practical track — не threshold tuning, а оценка $X_t$.
+
+Задачи:
+
+1. Реализовать synthetic oracle с известным $X$ как upper bound.
+2. Реализовать causal point-process filter/particle filter, соответствующий six-event
+   likelihood, включая информацию и от events, и от silence/no-event survival.
+3. Реализовать простой causal Gaussian/Kalman surrogate и заранее выбранный naive
+   causal baseline; retrospective smoother разрешён только как labelled diagnostic.
+4. Оценивать $\mu_i,\alpha_i,\sigma_X$ и reduced $(\alpha,s_G)$ только на past training
+   windows с constraints/uncertainty. Balanced model сравнить с unbalanced alternative
+   по out-of-sample likelihood и calibration, не по trading P&L.
+5. На real data проверить stationarity, ACF, event residuals/time rescaling, parity-specific
+   drift, parameter stability и posterior uncertainty.
+
+Stop/gate P6:
+
+- на synthetic data causal estimator должен превосходить preregistered naive baseline по
+  state error и out-of-sample observation likelihood; oracle gap не попадает в feasible
+  backtest;
+- все empirical signals вычисляются online и timestamp audit не находит future access;
+- если filter uncertainty сравнима с или больше option-value margin
+  $\theta-(\phi+c)$ и signal не превосходит controls, P&L optimization останавливается
+  и результат фиксируется как negative feasibility finding.
+
+### P7. Event-driven backtest и accounting
+
+Задачи:
+
+1. Реализовать target policy точно по статье: first one-lot entry, затем two-lot flips;
+   отдельно labelled practical variant может иметь flat zone/session flattening.
+2. Decision возникает только после доступного event; fill price — первый исполнимый
+   displayed quote не раньше `decision_time + latency`. Zero-latency paper convention,
+   realistic latency и stress latency — разные scenarios.
+3. Проверять touch depth и size/participation; при недостаточной depth применять
+   preregistered partial/rejected/walk-the-book rule, а не optimistic fill.
+4. Считать P&L из cash and inventory ledger. Не double-count spread: execution at bid/ask
+   уже включает его; отдельно добавляются fee, slippage, borrow/funding, rolls и forced
+   liquidation.
+5. Сохранять gross, paper spread-only и full-net decompositions, mid-marked and cash
+   reconciliations, every decision/fill/rejection и causal feature snapshot.
+6. Добавить tests на timestamp ordering, no-look-ahead, flip quantity, fees, latency,
+   session boundary, missing quotes, mark-to-market и deterministic replay.
+
+Gate P7: hand-computed toy paths и property tests полностью сходятся; каждый P&L change
+воспроизводится из fill ledger; impossible/optimistic fills отсутствуют.
+
+### P8. Nested development и limited parameter search
+
+Filter/model hyperparameters выбираются по filtering likelihood/calibration, а не по
+strategy test P&L. Trading search начинается только после их freeze.
+
+Primary baseline:
+
+- causal filtered $\widehat G_t$;
+- realized state-dependent half-spread и known per-lot costs;
+- Dawson $\theta_D$ from rolling/past-only $(\widehat\alpha,\widehat s_G)$;
+- one-lot/two-lot flip semantics;
+- preregistered eligibility/risk gates.
+
+Required controls/ablations, по одному изменению за comparison:
+
+- no-trade accounting baseline;
+- myopic break-even threshold;
+- asymptotic $\theta^*$ versus Dawson $\theta_D$;
+- limited multiplier grid around $\theta_D$ (candidate set
+  $k_D\in\{0.7,0.8,0.9,1.0,1.1\}$, окончательно freeze в protocol);
+- oracle versus causal filter только на synthetic data;
+- balanced versus unbalanced response;
+- frozen tight spread versus realized spread;
+- zero versus realistic latency; spread-only versus full costs;
+- parity-blind versus parity-aware band;
+- paper always-full versus separately labelled practical risk controls;
+- random/same-turnover and sign-reversed or delayed-signal negative controls.
+
+Использовать nested chronological walk-forward: train filter/model, validation выбирает
+единственный primary trading variant, следующий fold тестирует без адаптации. Overlapping
+holding periods учитываются purge/embargo или session-block inference. Полный search
+budget и все failed cells сохраняются.
+
+Gate P8: до untouched test заморожены один primary config, secondary family,
+aggregation/statistical method и stress scenarios; test hash и даты записаны, но P&L не
+просмотрена.
+
+### P9. Untouched test, profitability conditions и robustness
+
+Primary analysis выполняется один раз. Повторное открытие test после изменения метода
+требует нового dataset/time period и нового protocol.
+
+Метрики:
+
+- net/gross P&L per time, session, round trip и traded notional;
+- turnover, fill/reject counts, holding time, exposure и cost attribution;
+- daily/session Sharpe с явной annualization, downside deviation, hit rate, maximum
+  drawdown и tail loss;
+- confidence interval, effective sample size и probability of backtest overfitting;
+- capacity proxy: touch depth, participation и P&L under size/slippage scenarios.
+
+Statistical protocol:
+
+- session/day block bootstrap, сохраняющий intraday dependence; block choice фиксируется
+  до target test;
+- primary one-sided 95% lower confidence bound; secondary family — SPA/Reality Check
+  или заранее выбранная FWER/FDR correction;
+- uncertainty reported both across time blocks and, где применимо, across instruments;
+- не смешивать folds/instruments как independent ticks;
+- cost stress не менее 1.25x для uncertain fee/slippage components и минимум один
+  conservative latency scenario; конкретные значения следуют из venue evidence.
+
+Карта условий строится **только из out-of-fold/holdout observations** и включает:
+
+| Condition variable | Dimensionless form | Preregistered expectation, не факт |
+|---|---|---|
+| Effective spread and costs | $\gamma_{eff}=(\phi+c)/s_G$ | Меньше — больше option-value margin и rate |
+| Reversion speed | $\alpha$ и half-life $\log 2/\alpha$ | Быстрее полезно лишь при latency намного меньше half-life |
+| Latency | $\alpha L$ | Рост должен уменьшать realized edge |
+| Jump granularity | $\delta/\theta$ и $\delta/(\theta-\phi-c)$ | Большие значения ухудшают surrogate accuracy |
+| Open occupancy | $p=\Pr(S=2\delta)$ и fill-state occupancy | Большое $p$ повышает realized costs/model mismatch |
+| Balance violation | $|\alpha_c-(2\alpha_s+\alpha_o)|/\alpha_{eff}$ | Большое значение ломает single-rate theory |
+| Filter uncertainty | posterior SD / $s_G$ и / margin | Большая uncertainty размывает threshold crossings |
+| Parameter stability | drift/variance across past windows | Нестабильность должна ухудшать transfer |
+| Liquidity/capacity | order size / touch depth | Рост должен повышать rejections/slippage/impact risk |
+
+Condition считается найденным не по красивой heatmap cell, а если её sign/direction
+стабилен между preregistered folds/instruments, uncertainty исключает practically null
+effect и результат повторяется на untouched data. Иначе это exploratory hypothesis.
+
+Profitability gate:
+
+1. primary full-net lower 95% bound $>0$;
+2. positive result после multiplicity-aware selection;
+3. non-negative under preregistered moderate cost and latency stress;
+4. не хуже no-trade/random controls по заранее выбранной risk-adjusted metric;
+5. достаточное число independent sessions и trades по P5 power analysis;
+6. нет критического data leakage, fill optimism или single-regime concentration.
+
+### P10. Synthesis и release
+
+Задачи:
+
+- финально обновить этот plan, ADRs и отдельные synthetic/empirical reports;
+- для каждого claim дать links на experiment IDs, configs, tables, plots и logs;
+- перечислить deviations, failed runs, tuning budget и unresolved assumptions;
+- обновить README с воспроизводимыми `uv run ...` командами;
+- выполнить baseline CLI/tests, fresh-environment smoke и artifact manifest audit;
+- дать итог один из: `profitable-under-stated-conditions`, `not-confirmed`,
+  `negative`, `data-blocked`, без усиления формулировки.
+
+## 6. Начальная experiment matrix
+
+Имена configs являются planned contract и создаются/уточняются в P1 до запусков.
+
+| Experiment ID | Planned config | Claim/output | Status |
+|---|---|---|---|
+| `ANA-SMOKE-001` | `cfg/experiments/paper_smoke.yaml` | One config, Dawson residual, one metric | pending |
+| `ANA-FIG3-001` | `cfg/experiments/figure3.yaml` | Surrogate thresholds/rate curves | pending |
+| `SIM-MOMENTS-001` | `cfg/experiments/moment_checks.yaml` | Parity, drift, variance, ACF, occupancy | pending |
+| `SIM-FIG4-001` | `cfg/experiments/figure4.yaml` | Jump versus surrogate band sweep | underdetermined-author-settings |
+| `SIM-FIG5-001` | `cfg/experiments/figure5.yaml` | Strategy path, fills, wealth identities | pending-illustrative |
+| `EMP-DATA-001` | `cfg/experiments/data_feasibility.yaml` | Eligibility, quality, split freeze | pending-data-source |
+| `EMP-FILTER-001` | `cfg/experiments/filter_validation.yaml` | Oracle/causal filter diagnostics | pending |
+| `BT-SMOKE-001` | `cfg/experiments/backtest_smoke.yaml` | Toy ledger and no-look-ahead | pending |
+| `BT-WF-001` | `cfg/experiments/walk_forward.yaml` | Nested development/validation | pending |
+| `BT-HOLDOUT-001` | `cfg/experiments/holdout.yaml` | Locked primary test | pending |
+
+## 7. Stop criteria и порядок решений
+
+- Не переходить к Figure 4 claims, пока simulator не прошёл invariants и resolution
+  convergence.
+- Не переходить к real-data P&L search, пока causal filter не прошёл P6 на synthetic
+  controls и timestamp audit.
+- Не пытаться «найти прибыль» подбором costs, venue interval или universe после
+  просмотра test.
+- Если gross edge не покрывает spread ещё до uncertain costs, остановить parameter
+  expansion и записать отрицательный результат.
+- Если эффект существует только при zero latency, oracle $X$, ignored fees или
+  unrealistic fills, классифицировать его как theoretical upper bound.
+- Если подходящие licensed event data недоступны, не заменять их candles для primary
+  claim; остановить empirical track как `blocked-data`.
+- После отрицательного holdout новый поиск — отдельная hypothesis, protocol, config и
+  новый untouched period, а не amendment старого результата.
+- Новые filters, flat zones, risk objectives или execution logic вводить только как
+  отдельно специфицированные extensions с baseline/ablation.
+
+## 8. Definition of done
+
+Проект завершён, когда:
+
+1. Все paper claims из Section 2.3 имеют evidence-linked status и independent report.
+2. Analytical baseline и simulator воспроизводятся из fresh checkout одной CLI-командой
+   на tiny config и documented full configs.
+3. Empirical data/filter/backtest имеют immutable provenance и causal audit либо явно
+   зафиксированный blocker.
+4. Profitability statement, если оно есть, относится только к названным venue,
+   instruments, periods, size, costs, latency и confidence level.
+5. Условия доходности подтверждены out of sample; либо честно документировано, что при
+   проверенных условиях они не найдены.
+6. Plan, ADRs, protocols, reports, README, tests и experiment manifests согласованы;
+   negative results и deviations сохранены.
+
+## 9. Ближайший исполняемый шаг
+
+P1 должен создать минимальный protocol/ADR/config contract для `ANA-SMOKE-001`, после
+чего P2 реализует только Dawson solver, surrogate rate и один smoke metric. Jump
+simulation, market data и backtest не входят в первый executable baseline и не должны
+расширять его до прохождения analytical gate.

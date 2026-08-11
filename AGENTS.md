@@ -8,7 +8,7 @@
 
 ## Задача проекта
 
-Воспроизвести результаты статьи, 
+Воспроизвести результаты статьи docs/papers/2608.00885v1 - Optimal Trading of Microstructure Mean Reversion.pdf и затем построить на её основе торговую стратегию, провести backtests и найти условия и параметры стратегии, при которых эта стратегия доходна.
 
 ## Source of truth
 
@@ -157,7 +157,8 @@ uv run python -m unittest discover -s tests -t . -v
 - При изменении scope, invariants или research protocol синхронизируй соответствующие docs и обычно `README.md`/`AGENTS.md`.
 - Не коммить тяжёлые outputs, checkpoints, datasets, credentials, API keys, private PDFs/data и notebook checkpoints.
 - поддерживай .gitignore актуальным, проверяй его перед каждым коммитом
-- Перед коммитом проверь `git status` и исключи чужие или случайные изменения.
+- Перед коммитом проверь `git status` и исключи чужие или случайные изменения
+- После выполнения каждой задачи делай ревью собственного кода и результатов, а после прохождения ревью отправляй pull request в репозиторий.
 
 ## Git worktrees
 
