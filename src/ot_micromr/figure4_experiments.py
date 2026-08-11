@@ -21,6 +21,8 @@ from ot_micromr.figure4 import (
 )
 from ot_micromr.figure4_cuda import evaluate_market_traces_cuda
 from ot_micromr.figure4_market import simulate_market_trace, simulate_market_traces
+from ot_micromr.figure4_illustrations import render_paper_illustrations
+from ot_micromr.statistical_gates import holm_adjust, independent_equivalence
 
 
 def _mean_se_interval(values: Sequence[float]) -> tuple[float, float, float, float]:
@@ -292,9 +294,123 @@ def _functionals(
                     "bootstrap_loss_theta_star_95_upper": float(
                         np.quantile(losses_star, 0.975)
                     ),
+                    "bootstrap_inward_shift_minimum_effect_p_value": (
+                        float(
+                            (
+                                1
+                                + np.count_nonzero(
+                                    shifts
+                                    - (1.0 - grid[peak_index])
+                                    >= (1.0 - grid[peak_index])
+                                    - float(values["evaluation"]["inward_shift_minimum_effect"])
+                                )
+                            )
+                            / (shifts.size + 1)
+                        )
+                        if "inward_shift_minimum_effect" in values["evaluation"]
+                        else None
+                    ),
                 }
             )
     return rows, backend_records
+
+
+def _scientific_gates(
+    values: Mapping[str, Any],
+    results: Sequence[Figure4Replication],
+    functional_rows: list[dict[str, Any]],
+    selections: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    evaluation = values["evaluation"]
+    if "inward_shift_minimum_effect" not in evaluation:
+        return {"status": "pilot_not_claim_eligible"}
+    alpha = float(evaluation["familywise_alpha"])
+    primary_epsilon = float(values["numerics"]["primary_resolution_epsilon"])
+    selected_indices = list(dict.fromkeys(int(item["row_index"]) for item in selections))
+    primary_rows = [
+        row
+        for row in functional_rows
+        if float(row["epsilon"]) == primary_epsilon
+        and int(row["row_index"]) in selected_indices
+    ]
+    primary_rows.sort(key=lambda row: selected_indices.index(int(row["row_index"])))
+    primary_adjusted = holm_adjust(
+        [float(row["bootstrap_inward_shift_minimum_effect_p_value"]) for row in primary_rows]
+    )
+    primary_records: list[dict[str, Any]] = []
+    for row, adjusted in zip(primary_rows, primary_adjusted, strict=True):
+        row["bootstrap_inward_shift_holm_adjusted_p_value"] = adjusted
+        row["bootstrap_inward_shift_gate_status"] = (
+            "supported" if adjusted < alpha else "inconclusive"
+        )
+        primary_records.append(
+            {
+                "row_index": int(row["row_index"]),
+                "estimate": float(row["discrete_inward_shift_fraction"]),
+                "minimum_effect": float(evaluation["inward_shift_minimum_effect"]),
+                "p_value": float(row["bootstrap_inward_shift_minimum_effect_p_value"]),
+                "holm_adjusted_p_value": adjusted,
+                "status": row["bootstrap_inward_shift_gate_status"],
+            }
+        )
+
+    epsilons = sorted({float(result.epsilon) for result in results}, reverse=True)
+    if epsilons != [0.01, 0.005]:
+        raise RuntimeError("target refinement requires epsilon 0.01 and 0.005")
+    refinement_records: list[dict[str, Any]] = []
+    equivalence_p_values: list[float] = []
+    for row_index in selected_indices:
+        for label in ("grid:1", "theta_star"):
+            samples: list[list[float]] = []
+            for epsilon in epsilons:
+                samples.append(
+                    [
+                        float(policy["renewal_rate_over_alpha_s_g"])
+                        for result in results
+                        if result.row_index == row_index and result.epsilon == epsilon
+                        for policy in result.policy_rows
+                        if str(policy["policy_label"]) == label
+                    ]
+                )
+            gate = independent_equivalence(
+                samples[0],
+                samples[1],
+                margin=float(evaluation["refinement_rate_equivalence_margin"]),
+                alpha=alpha,
+            )
+            record = {
+                "row_index": row_index,
+                "policy_label": label,
+                **asdict(gate),
+            }
+            refinement_records.append(record)
+            equivalence_p_values.append(gate.p_equivalence)
+    refinement_adjusted = holm_adjust(equivalence_p_values)
+    for record, adjusted in zip(refinement_records, refinement_adjusted, strict=True):
+        record["holm_adjusted_p_equivalence"] = adjusted
+        record["multiplicity_status"] = (
+            "equivalent"
+            if adjusted < alpha
+            else "meaningfully_different"
+            if record["status"] == "meaningfully_different"
+            else "inconclusive"
+        )
+    primary_supported = all(
+        record["status"] == "supported" for record in primary_records
+    )
+    refinement_supported = all(
+        record["multiplicity_status"] == "equivalent"
+        for record in refinement_records
+    )
+    return {
+        "status": "supported"
+        if primary_supported and refinement_supported
+        else "inconclusive",
+        "primary_family_id": evaluation["primary_family_id"],
+        "primary": primary_records,
+        "refinement_family_id": evaluation["refinement_family_id"],
+        "refinement": refinement_records,
+    }
 
 
 def _render_figure4(
@@ -377,7 +493,12 @@ def _render_figure4(
 def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
     from ot_micromr.experiments import EvaluationResult
 
+    evaluation_started = time.perf_counter()
     values = spec.to_dict()
+    wall_budget = values["evaluation"].get("maximum_target_wall_seconds")
+    deadline = (
+        evaluation_started + float(wall_budget) if wall_budget is not None else None
+    )
     calibrations = calibrate_rows(values)
     calibration_rows = [asdict(row) for row in calibrations]
     write_csv(
@@ -394,13 +515,19 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         for seed in seeds
     ]
     use_cuda = False
-    if bool(values["numerics"]["gpu_reduction_enabled"]):
+    if bool(
+        values["numerics"].get(
+            "gpu_crossing_enabled", values["numerics"]["gpu_reduction_enabled"]
+        )
+    ):
         try:
             import torch
         except ImportError:
             pass
         else:
             use_cuda = bool(torch.cuda.is_available())
+    if bool(values["numerics"].get("gpu_crossing_enabled", False)) and not use_cuda:
+        raise RuntimeError("claim-eligible Figure 4 target requires the frozen CUDA backend")
     market_traces = ()
     continuous_backend: dict[str, Any]
     if use_cuda:
@@ -413,7 +540,13 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         )
         market_seconds = time.perf_counter() - market_started
         cuda_started = time.perf_counter()
-        cuda_evaluation = evaluate_market_traces_cuda(values, calibrations, market_traces)
+        cuda_evaluation = evaluate_market_traces_cuda(
+            values,
+            calibrations,
+            market_traces,
+            chunk_steps=int(values["numerics"].get("gpu_chunk_steps", 32768)),
+            deadline_monotonic=deadline,
+        )
         cuda_seconds = time.perf_counter() - cuda_started
         results = cuda_evaluation.replications
         continuous_backend = {
@@ -452,6 +585,33 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
     selections = _selected_rows(
         calibrations, values["evaluation"]["target_realized_gamma_ratios"]
     )
+    scientific_gates = _scientific_gates(
+        values, results, functional_rows, selections
+    )
+    illustration_row = int(selections[0]["row_index"])
+    if market_traces:
+        illustration_trace = next(
+            trace
+            for trace in market_traces
+            if trace.row_index == illustration_row
+            and trace.epsilon == float(values["numerics"]["primary_resolution_epsilon"])
+            and trace.seed == seeds[0]
+        )
+    else:
+        illustration_trace = simulate_market_trace(
+            values,
+            next(row for row in calibrations if row.row_index == illustration_row),
+            float(values["numerics"]["primary_resolution_epsilon"]),
+            seeds[0],
+        )
+    render_paper_illustrations(
+        values,
+        next(row for row in calibrations if row.row_index == illustration_row),
+        illustration_trace,
+        run_directory,
+    )
+    if deadline is not None and time.perf_counter() >= deadline:
+        raise TimeoutError("SIM-FIG4-002 exceeded its preregistered wall-clock budget")
     replay_mismatches = 0
     for replay_seed in values["seed_policy"]["deterministic_replay_seeds"]:
         if use_cuda:
@@ -569,6 +729,7 @@ def evaluate_figure4(spec: RunSpec, run_directory: Path) -> Any:
         "calibration": calibration_rows,
         "selected_gamma_rows": selections,
         "primary_functionals": primary_functionals,
+        "scientific_gates": scientific_gates,
         "backend": backend,
         "maximum_omitted_probability_bound": max_omitted,
         "maximum_wealth_marking_identity_abs_residual": max_identity,

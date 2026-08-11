@@ -668,6 +668,19 @@ power analysis.
 preregister `SIM-FIG4-002` и до target inspection benchmark-ом выбрать CPU/GPU execution
 для полного, а не endpoint-only, kernel.
 
+P4 pilot и target freeze выполнены 2026-08-11. CPU pilot
+`20260811T200458288216Z-d9d6dc74bb9e-det` занял `186.996 s`; эквивалентный hybrid
+CPU/CUDA pilot `20260811T201826249541Z-d9d6dc74bb9e-det` — `34.424 s` (`5.43x`).
+Target `SIM-FIG4-002` preregistered на трёх response rows, 30 новых seeds, horizon 300,
+grid step 0.05, 10,000 bootstrap draws и 150-second stop budget. Power calculation,
+minimum effect 0.05 и secondary refinement limitation зафиксированы в
+[`p4-figure-reconstruction.md`](protocols/synthetic/p4-figure-reconstruction.md) до target.
+Figures 2 и 5 генерируются как явно illustrative artifacts того же run.
+
+Непосредственный следующий шаг: выполнить единственный target look `SIM-FIG4-002` из
+чистого commit, затем выпустить evidence-linked P4 report. Дополнительные seeds после
+просмотра target запрещены.
+
 ### P5. Data feasibility, licensing и frozen universe
 
 До выбора data source empirical код не должен делать implicit network downloads.
@@ -871,7 +884,9 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 | `SIM-MOMENTS-001` | `cfg/experiments/sim_moments_001.toml` | Parity, drift, variance, ACF, occupancy | acceptance failed; `20260811T172240473272Z-060cfab011c3-det` |
 | `SIM-UNBALANCED-001` | `cfg/experiments/sim_unbalanced_001.toml` | One-factor parity-drift negative control | acceptance failed; `20260811T172916459381Z-5497c39af2dd-det` |
 | `SIM-FIG4-001` | `cfg/experiments/sim_fig4_001.toml` | Jump versus surrogate band sweep | blocked by P3; not run; underdetermined-author-settings |
-| `SIM-FIG5-001` | `cfg/experiments/sim_fig5_001.toml` | Strategy path, fills, wealth identities | pending-illustrative |
+| `SIM-FIG4-PILOT-002` | `cfg/experiments/sim_fig4_pilot_002.toml` | Crossing/variance/compute pilot | completed; non-claim; operational floor expectedly missed |
+| `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | preregistered; target not run |
+| `SIM-FIG5-001` | integrated into `SIM-FIG4-002` artifacts | Strategy path, fills, wealth identities | implemented; target artifact pending |
 | `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | Eligibility, quality, split freeze | pending-data-source |
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Oracle/causal filter diagnostics | pending |
 | `BT-SMOKE-001` | `cfg/experiments/bt_smoke_001.toml` | Toy ledger and no-look-ahead | pending |
@@ -915,20 +930,7 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 
 ## 9. Ближайший исполняемый шаг
 
-Текущие `SIM-MOMENTS-001` и `SIM-UNBALANCED-001` не перезапускаются и не
-переинтерпретируются. Следующий шаг — P3V downstream sensitivity **до** нового target
-output:
-
-1. оценить, как контролируемое смещение mean/variance/flow/drift/ACF меняет Figure 4
-   peak, normalized rate и rate-loss estimands;
-2. из допустимого distortion claim вывести SESOI и stricter numerical margins, а не
-   переносить old heuristic `2/3/5%`;
-3. по old seeds как disjoint pilot оценить cluster variance и сравнить horizon/seeds/
-   estimator варианты по power per compute;
-4. зарегистрировать новые `SIM-*002` configs с entirely new confirmatory seeds,
-   familywise inference, fixed sample/precision stop и statistical-gates-v1 artifacts;
-5. только после powered balanced/control validation решать, разблокирован ли новый
-   Figure 4 experiment.
-
-До этого P4 и strategy simulation blocked. Empirical data-feasibility work может идти
-независимо, но не может ссылаться на текущий P3 как на полностью validated simulator.
+P3V supported, P4 pilot завершён, CUDA regression принят и `SIM-FIG4-002` заморожен до
+target output. Следующий и единственный P4 look — выполнить этот config из чистого commit,
+не превышая 150 секунд и не добавляя seeds после результата. Затем выпустить
+`docs/reports/paper-reproduction.md`, обновить claim matrix и перейти к P5 data feasibility.

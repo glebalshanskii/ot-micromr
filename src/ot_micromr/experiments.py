@@ -419,8 +419,16 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                     run_directory / "tables" / "curve_summary.csv",
                     run_directory / "tables" / "functionals.csv",
                 ],
-                "figure_data": [run_directory / "figures" / "figure4-data.csv"],
-                "figure": [run_directory / "figures" / "figure4.png"],
+                "figure_data": [
+                    run_directory / "figures" / "figure2-data.csv",
+                    run_directory / "figures" / "figure4-data.csv",
+                    run_directory / "figures" / "figure5-data.csv",
+                ],
+                "figure": [
+                    run_directory / "figures" / "figure2.png",
+                    run_directory / "figures" / "figure4.png",
+                    run_directory / "figures" / "figure5.png",
+                ],
                 "calibration_table": [run_directory / "tables" / "calibration.csv"],
                 "fill_log": [run_directory / "records" / "fills.csv"],
             }
@@ -570,6 +578,10 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
         {
             "rng_used": spec.values["seed_policy"]["rng_used"],
             "rng_algorithm": spec.values["seed_policy"]["rng_algorithm"],
+            "bridge_rng_algorithm": spec.values["seed_policy"].get(
+                "bridge_rng_algorithm", "numpy.random.PCG64DXSM"
+            ),
+            "bridge_seed": spec.values["seed_policy"].get("bridge_seed"),
             "calibration_seeds": list(spec.values["seed_policy"]["calibration_seeds"]),
             "strategy_seeds": list(spec.values["seed_policy"]["strategy_seeds"]),
             "deterministic_replay_seeds": list(

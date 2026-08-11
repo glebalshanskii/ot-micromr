@@ -1065,18 +1065,21 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         raise ConfigError(f"RunSpec.claim_eligible: expected {not pilot}")
 
     seed = _table(data, "seed_policy")
+    seed_required = {
+        "rng_used",
+        "rng_algorithm",
+        "calibration_seeds",
+        "strategy_seeds",
+        "deterministic_replay_seeds",
+        "mapping",
+        "bootstrap_seed",
+        "stream_mapping_version",
+    }
+    if not pilot:
+        seed_required |= {"bridge_rng_algorithm", "bridge_seed", "bridge_seed_mapping"}
     _expect_keys(
         seed,
-        {
-            "rng_used",
-            "rng_algorithm",
-            "calibration_seeds",
-            "strategy_seeds",
-            "deterministic_replay_seeds",
-            "mapping",
-            "bootstrap_seed",
-            "stream_mapping_version",
-        },
+        seed_required,
         "RunSpec.seed_policy",
     )
     if not _boolean(seed, "rng_used", "RunSpec.seed_policy"):
@@ -1098,13 +1101,22 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         raise ConfigError("RunSpec.seed_policy.deterministic_replay_seeds: expected strategy seeds")
     if pilot and (len(calibration_seeds), len(strategy_seeds)) != (6, 6):
         raise ConfigError("RunSpec.seed_policy: pilot requires six calibration and strategy seeds")
+    if not pilot and (len(calibration_seeds), len(strategy_seeds)) != (12, 30):
+        raise ConfigError("RunSpec.seed_policy: target requires 12 calibration and 30 strategy seeds")
     _string(seed, "mapping", "RunSpec.seed_policy")
     _integer(seed, "bootstrap_seed", "RunSpec.seed_policy", positive=True)
-    if (
-        _string(seed, "stream_mapping_version", "RunSpec.seed_policy")
-        != "figure4_row_resolution_policy_bridge_v2"
-    ):
+    expected_stream_mapping = (
+        "figure4_row_resolution_cuda_bridge_v3"
+        if not pilot
+        else "figure4_row_resolution_policy_bridge_v2"
+    )
+    if _string(seed, "stream_mapping_version", "RunSpec.seed_policy") != expected_stream_mapping:
         raise ConfigError("RunSpec.seed_policy.stream_mapping_version: unexpected mapping")
+    if not pilot:
+        if _string(seed, "bridge_rng_algorithm", "RunSpec.seed_policy") != "torch.cuda.Philox":
+            raise ConfigError("RunSpec.seed_policy.bridge_rng_algorithm: unexpected algorithm")
+        _integer(seed, "bridge_seed", "RunSpec.seed_policy", positive=True)
+        _string(seed, "bridge_seed_mapping", "RunSpec.seed_policy")
 
     units = _table(data, "units")
     _expect_keys(
@@ -1125,30 +1137,33 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
             raise ConfigError(f"RunSpec.units.{key}: expected {expected!r}")
 
     numerics = _table(data, "numerics")
+    numerics_required = {
+        "market_float_dtype",
+        "reduction_float_dtype",
+        "simulation_algorithm",
+        "primary_resolution_epsilon",
+        "refinement_epsilons",
+        "max_time_step_rule",
+        "max_event_probability_rule",
+        "bridge_crossing_probability",
+        "bridge_probability_cutoff",
+        "bridge_only_hit_time_rule",
+        "omitted_probability_budget",
+        "root_lower_margin_ratio",
+        "root_upper_u_ratio",
+        "root_xtol",
+        "root_rtol",
+        "root_max_iterations",
+        "cpu_workers",
+        "gpu_reduction_enabled",
+        "gpu_compile_enabled",
+        "gpu_fallback",
+    }
+    if not pilot:
+        numerics_required |= {"gpu_crossing_enabled", "gpu_chunk_steps"}
     _expect_keys(
         numerics,
-        {
-            "market_float_dtype",
-            "reduction_float_dtype",
-            "simulation_algorithm",
-            "primary_resolution_epsilon",
-            "refinement_epsilons",
-            "max_time_step_rule",
-            "max_event_probability_rule",
-            "bridge_crossing_probability",
-            "bridge_probability_cutoff",
-            "bridge_only_hit_time_rule",
-            "omitted_probability_budget",
-            "root_lower_margin_ratio",
-            "root_upper_u_ratio",
-            "root_xtol",
-            "root_rtol",
-            "root_max_iterations",
-            "cpu_workers",
-            "gpu_reduction_enabled",
-            "gpu_compile_enabled",
-            "gpu_fallback",
-        },
+        numerics_required,
         "RunSpec.numerics",
     )
     expected_numerics = {
@@ -1184,6 +1199,10 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         raise ConfigError("RunSpec.numerics.cpu_workers: expected at most 20")
     _boolean(numerics, "gpu_reduction_enabled", "RunSpec.numerics")
     _boolean(numerics, "gpu_compile_enabled", "RunSpec.numerics")
+    if not pilot:
+        if not _boolean(numerics, "gpu_crossing_enabled", "RunSpec.numerics"):
+            raise ConfigError("RunSpec.numerics.gpu_crossing_enabled: expected true")
+        _integer(numerics, "gpu_chunk_steps", "RunSpec.numerics", positive=True)
 
     inputs = _table(data, "inputs")
     _expect_keys(
@@ -1245,6 +1264,8 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         raise ConfigError("RunSpec.model.response_scale_alpha_per_second_grid: invalid grid")
     if any(right <= left for left, right in zip(alpha_grid, alpha_grid[1:])):
         raise ConfigError("RunSpec.model.response_scale_alpha_per_second_grid: must increase")
+    if not pilot and alpha_grid != (0.65, 1.0, 2.0):
+        raise ConfigError("RunSpec.model.response_scale_alpha_per_second_grid: unexpected target grid")
     fractions = tuple(
         _number(model, key, "RunSpec.model")
         for key in (
@@ -1316,6 +1337,8 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         "horizon_reversion_times",
     ):
         _number(simulation, key, "RunSpec.simulation", positive=True)
+    if not pilot and float(simulation["horizon_reversion_times"]) != 300.0:
+        raise ConfigError("RunSpec.simulation.horizon_reversion_times: expected target horizon 300")
     if _integer(simulation, "replications", "RunSpec.simulation", positive=True) != len(
         strategy_seeds
     ):
@@ -1355,6 +1378,15 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         right <= left for left, right in zip(thresholds, thresholds[1:])
     ):
         raise ConfigError("RunSpec.strategy.threshold_multiplier_theta_over_theta_d_grid: invalid")
+    expected_target_thresholds = tuple(0.5 + 0.05 * index for index in range(23))
+    if not pilot and (
+        len(thresholds) != len(expected_target_thresholds)
+        or any(
+            not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-12)
+            for actual, expected in zip(thresholds, expected_target_thresholds)
+        )
+    ):
+        raise ConfigError("RunSpec.strategy.threshold_multiplier_theta_over_theta_d_grid: unexpected target grid")
     if _string_sequence(strategy, "additional_thresholds", "RunSpec.strategy") != (
         "theta_star",
     ):
@@ -1408,21 +1440,33 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         raise ConfigError("RunSpec.execution.wealth_markings: unexpected markings")
 
     evaluation = _table(data, "evaluation")
+    evaluation_required = {
+        "primary_metric",
+        "target_realized_gamma_ratios",
+        "aggregation",
+        "confidence_interval",
+        "bootstrap_replications",
+        "familywise_alpha",
+        "power_target",
+        "minimum_complete_interfill_intervals_per_seed_and_policy",
+        "rate_normalization",
+        "peak_rule",
+        "rate_loss_rule",
+    }
+    if not pilot:
+        evaluation_required |= {
+            "primary_family_id",
+            "inward_shift_minimum_effect",
+            "inward_shift_planning_alternative",
+            "inward_shift_pilot_cluster_standard_deviation",
+            "planned_strategy_seed_count",
+            "refinement_family_id",
+            "refinement_rate_equivalence_margin",
+            "maximum_target_wall_seconds",
+        }
     _expect_keys(
         evaluation,
-        {
-            "primary_metric",
-            "target_realized_gamma_ratios",
-            "aggregation",
-            "confidence_interval",
-            "bootstrap_replications",
-            "familywise_alpha",
-            "power_target",
-            "minimum_complete_interfill_intervals_per_seed_and_policy",
-            "rate_normalization",
-            "peak_rule",
-            "rate_loss_rule",
-        },
+        evaluation_required,
         "RunSpec.evaluation",
     )
     for key in (
@@ -1437,7 +1481,11 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
     targets = _number_sequence(evaluation, "target_realized_gamma_ratios", "RunSpec.evaluation")
     if targets != (0.28, 0.36, 0.47):
         raise ConfigError("RunSpec.evaluation.target_realized_gamma_ratios: unexpected targets")
-    _integer(evaluation, "bootstrap_replications", "RunSpec.evaluation", positive=True)
+    bootstrap_replications = _integer(
+        evaluation, "bootstrap_replications", "RunSpec.evaluation", positive=True
+    )
+    if not pilot and bootstrap_replications != 10_000:
+        raise ConfigError("RunSpec.evaluation.bootstrap_replications: expected 10000")
     if (
         _number(evaluation, "familywise_alpha", "RunSpec.evaluation") != 0.05
         or _number(evaluation, "power_target", "RunSpec.evaluation") != 0.90
@@ -1449,6 +1497,46 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         "RunSpec.evaluation",
         positive=True,
     )
+    if not pilot:
+        for key in ("primary_family_id", "refinement_family_id"):
+            _string(evaluation, key, "RunSpec.evaluation")
+        for key in (
+            "inward_shift_minimum_effect",
+            "inward_shift_planning_alternative",
+            "inward_shift_pilot_cluster_standard_deviation",
+            "refinement_rate_equivalence_margin",
+            "maximum_target_wall_seconds",
+        ):
+            _number(evaluation, key, "RunSpec.evaluation", positive=True)
+        if _integer(
+            evaluation, "planned_strategy_seed_count", "RunSpec.evaluation", positive=True
+        ) != len(strategy_seeds):
+            raise ConfigError(
+                "RunSpec.evaluation.planned_strategy_seed_count: disagrees with strategy seeds"
+            )
+        expected_target_values = {
+            "inward_shift_minimum_effect": 0.05,
+            "inward_shift_planning_alternative": 0.20,
+            "inward_shift_pilot_cluster_standard_deviation": 0.234,
+            "refinement_rate_equivalence_margin": 0.02,
+            "maximum_target_wall_seconds": 150.0,
+        }
+        for key, expected in expected_target_values.items():
+            if float(evaluation[key]) != expected:
+                raise ConfigError(f"RunSpec.evaluation.{key}: expected frozen value {expected}")
+        from ot_micromr.statistical_gates import normal_approximation_sample_size
+
+        required_seeds = normal_approximation_sample_size(
+            standard_deviation=float(
+                evaluation["inward_shift_pilot_cluster_standard_deviation"]
+            ),
+            distance_to_null=float(evaluation["inward_shift_planning_alternative"])
+            - float(evaluation["inward_shift_minimum_effect"]),
+            alpha=float(evaluation["familywise_alpha"]) / 3.0,
+            power=float(evaluation["power_target"]),
+        )
+        if len(strategy_seeds) < required_seeds:
+            raise ConfigError("RunSpec.evaluation: target seed count is below powered design")
 
     acceptance = _table(data, "acceptance")
     _expect_keys(
@@ -1480,12 +1568,16 @@ def _validate_figure4(data: Mapping[str, Any], experiment_id: str) -> None:
         "stop_on_nonfinite_value",
     ):
         _boolean(acceptance, key, "RunSpec.acceptance")
-    _integer(
+    acceptance_minimum_intervals = _integer(
         acceptance,
         "minimum_complete_interfill_intervals_per_seed_and_policy",
         "RunSpec.acceptance",
         positive=True,
     )
+    if not pilot and acceptance_minimum_intervals != 20:
+        raise ConfigError(
+            "RunSpec.acceptance.minimum_complete_interfill_intervals_per_seed_and_policy: expected 20"
+        )
     for key in (
         "invariant_violation_count_max",
         "nonfinite_value_count_max",

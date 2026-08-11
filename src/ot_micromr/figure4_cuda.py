@@ -59,9 +59,12 @@ def _padded_segment(
     return output
 
 
-def _bridge_seed(row_index: int, epsilon: float, seeds: Sequence[int]) -> int:
+def _bridge_seed(
+    values: Mapping[str, Any], row_index: int, epsilon: float, seeds: Sequence[int]
+) -> int:
     epsilon_code = int(round(epsilon * 1_000_000))
-    sequence = np.random.SeedSequence([20260811, row_index, epsilon_code, *seeds, 4])
+    base_seed = int(values["seed_policy"].get("bridge_seed", 20260811))
+    sequence = np.random.SeedSequence([base_seed, row_index, epsilon_code, *seeds, 4])
     return int(sequence.generate_state(1, dtype=np.uint64)[0] % (2**63 - 1))
 
 
@@ -71,6 +74,7 @@ def _evaluate_row_cuda(
     traces: Sequence[Figure4MarketTrace],
     *,
     chunk_steps: int,
+    deadline_monotonic: float | None,
 ) -> tuple[tuple[Figure4Replication, ...], dict[str, Any]]:
     import torch
 
@@ -269,7 +273,11 @@ def _evaluate_row_cuda(
 
     compiled = torch.compile(kernel, fullgraph=True)
     generator = torch.Generator(device="cuda")
-    generator.manual_seed(_bridge_seed(calibration.row_index, epsilon, [trace.seed for trace in traces]))
+    generator.manual_seed(
+        _bridge_seed(
+            values, calibration.row_index, epsilon, [trace.seed for trace in traces]
+        )
+    )
 
     def empty_carry(side: Any | None = None) -> tuple[Any, ...]:
         shape = (batch, policy_count)
@@ -299,6 +307,8 @@ def _evaluate_row_cuda(
         competing_segment = torch.zeros(batch, dtype=torch.float32, device="cuda")
         width = segment["valid"].shape[1]
         for offset in range(0, width, chunk_steps):
+            if deadline_monotonic is not None and time.perf_counter() >= deadline_monotonic:
+                raise TimeoutError("SIM-FIG4-002 exceeded its preregistered wall-clock budget")
             stop = min(offset + chunk_steps, width)
             local_width = stop - offset
             transfer_started = time.perf_counter()
@@ -522,12 +532,15 @@ def evaluate_market_traces_cuda(
     traces: Sequence[Figure4MarketTrace],
     *,
     chunk_steps: int = 32768,
+    deadline_monotonic: float | None = None,
 ) -> CudaEvaluation:
     by_row = {row.row_index: row for row in calibrations}
     results: list[Figure4Replication] = []
     benchmarks: dict[str, Any] = {}
     keys = sorted({(trace.epsilon, trace.row_index) for trace in traces}, reverse=True)
     for epsilon, row_index in keys:
+        if deadline_monotonic is not None and time.perf_counter() >= deadline_monotonic:
+            raise TimeoutError("SIM-FIG4-002 exceeded its preregistered wall-clock budget")
         selected = sorted(
             [
                 trace
@@ -537,7 +550,11 @@ def evaluate_market_traces_cuda(
             key=lambda item: item.seed,
         )
         local, benchmark = _evaluate_row_cuda(
-            values, by_row[row_index], selected, chunk_steps=chunk_steps
+            values,
+            by_row[row_index],
+            selected,
+            chunk_steps=chunk_steps,
+            deadline_monotonic=deadline_monotonic,
         )
         results.extend(local)
         benchmarks[f"epsilon_{epsilon:g}_row_{row_index}"] = benchmark

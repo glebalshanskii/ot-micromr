@@ -92,5 +92,15 @@ processes, vectorised threshold/policy evaluation на CUDA через `torch.co
 основано на локальном transfer-inclusive benchmark; CPU reference остаётся обязательным
 regression oracle.
 
+Claim-eligible P4 config требует CUDA, использует 30 новых seeds и не допускает
+добавления runs после просмотра результата:
+
+```bash
+uv run ot-micromr validate-config cfg/experiments/sim_fig4_002.toml
+uv run ot-micromr run cfg/experiments/sim_fig4_002.toml
+```
+
+В config заморожен wall-clock budget 150 секунд на проверенном RTX 3080 Ti Laptop GPU.
+
 Канонический статус и порядок работ: [`docs/plan.md`](docs/plan.md). Scientific
 protocol: [`docs/protocols/synthetic/paper-reproduction.md`](docs/protocols/synthetic/paper-reproduction.md).

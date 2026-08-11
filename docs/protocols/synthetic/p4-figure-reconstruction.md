@@ -82,6 +82,37 @@ adaptive market endpoints on process-parallel CPU and evaluates continuous cross
 alternating fills and rewards in batched `torch.compile` CUDA `float32`. A complete CUDA
 pilot regression and frozen end-to-end runtime budget are required before target launch.
 
+### Target amendment, 2026-08-11 — frozen before target execution
+
+The CUDA rerun `20260811T201826249541Z-d9d6dc74bb9e-det` completed in `34.424 s`
+versus `186.996 s` for the old CPU architecture (`5.43x` end-to-end). Primary discrete
+peak directions agreed in five of six response rows; the remaining one-grid-cell difference
+lay inside the pilot bootstrap interval. Maximum omitted-crossing bound remained
+`5.97e-11`, well below `1e-5`.
+
+`SIM-FIG4-002` is now frozen as follows:
+
+- new, disjoint calibration seeds: 12; new strategy seeds: 30;
+- response scales `{0.65,1.0,2.0}`, selected from calibration-only pilot evidence to target
+  gamma approximately `{0.28,0.36,0.47}`;
+- measured horizon 300 reversion times, epsilons `{0.01,0.005}` and multiplier grid
+  `0.50:0.05:1.60` plus `theta_star`;
+- 10,000 complete-vector bootstrap resamples; no optional extension or additional look;
+- CUDA chunks of 32,768 adaptive endpoints and a 150-second target wall-clock stop budget.
+
+The primary family contains the three selected-row inward shifts. Minimum meaningful shift is
+`0.05`; the paper-level planning alternative is `0.20`. The conservative pilot cluster SD is
+`0.234`. A normal approximation with per-hypothesis `alpha=0.05/3` and power `0.90` requires
+29 seeds, rounded up to 30. Holm adjustment, not Bonferroni, is used for the final p-values.
+
+The old 100-interval-per-seed rule is not retained as a surrogate for precision. Pilot cells
+had at least 25 intervals, and the target requires at least 20 pathwise only as an operational
+denominator check; inference is controlled by the powered independent-seed design. The
+six-check numerical-refinement family compares fixed `theta_D` and `theta_star` rates using
+independent Welch TOST with margin `0.02`. Pilot variance predicts that this stricter secondary
+family may be inconclusive at 30 seeds; it is reported honestly and is not allowed to invalidate
+an otherwise complete run or trigger more target seeds.
+
 ## 4. Strategy and rate
 
 Every policy starts flat after 50 market burn-in reversion times, acquires a position during

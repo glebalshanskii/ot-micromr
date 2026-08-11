@@ -56,6 +56,15 @@ misses Brownian crossings and is not adequate for Figure 4.
    measured wall-clock. CPU `float64` remains the semantic oracle. Exact NumPy/Torch RNG
    identity is not required, but both stream mappings and backend regression are recorded.
 
+## Target amendment
+
+The completed pilot freezes 30 target strategy seeds, horizon 300, a 0.05 multiplier grid,
+and a primary minimum inward shift of 0.05. Pilot SD 0.234 implies 29 seeds for 90% power at
+the paper-level 0.20 planning alternative under conservative three-test alpha allocation;
+30 are used. The former 100-interfill floor is replaced by a 20-interval pathwise denominator
+check plus powered seed-cluster inference. This is not a relaxation after target inspection:
+the amendment precedes every target seed.
+
 ## Consequences
 
 The strategy evaluates the exact paper execution reward on the project's approximate jump

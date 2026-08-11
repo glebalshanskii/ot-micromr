@@ -93,6 +93,13 @@ class RunSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "unknown fields"):
             validate_runspec(data)
 
+    def test_figure4_target_contract_validates(self) -> None:
+        data = load_data("sim_fig4_002.toml")
+        validate_runspec(data)
+        data["evaluation"]["planned_strategy_seed_count"] = 29
+        with self.assertRaisesRegex(ConfigError, "disagrees with strategy seeds"):
+            validate_runspec(data)
+
     def test_unknown_simulation_field_is_rejected(self) -> None:
         data = load_data("sim_moments_001.toml")
         data["simulation"]["implicit_dt"] = 0.1
