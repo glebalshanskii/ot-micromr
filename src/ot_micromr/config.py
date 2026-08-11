@@ -541,7 +541,7 @@ def _validate_simulation_section(data: Mapping[str, Any], experiment_id: str) ->
     if experiment_id in UNBALANCED_SIMULATION_EXPERIMENTS:
         keys.add("reference_reversion_rate_per_second")
     if experiment_id.endswith("002"):
-        keys |= {"cpu_workers", "deterministic_replay_seeds"}
+        keys |= {"cpu_workers", "deterministic_replay_seeds", "step_diagnostics"}
     _expect_keys(simulation, keys, "RunSpec.simulation")
     if not _boolean(simulation, "enabled", "RunSpec.simulation"):
         raise ConfigError("RunSpec.simulation.enabled: expected true")
@@ -575,6 +575,8 @@ def _validate_simulation_section(data: Mapping[str, Any], experiment_id: str) ->
         if _number(simulation, "reference_reversion_rate_per_second", "RunSpec.simulation", positive=True) != 1.0:
             raise ConfigError("RunSpec.simulation.reference_reversion_rate_per_second: expected 1")
     if experiment_id.endswith("002"):
+        if _boolean(simulation, "step_diagnostics", "RunSpec.simulation"):
+            raise ConfigError("RunSpec.simulation.step_diagnostics: P3V requires false")
         workers = _integer(simulation, "cpu_workers", "RunSpec.simulation", positive=True)
         if workers > 20:
             raise ConfigError("RunSpec.simulation.cpu_workers: expected at most 20")

@@ -91,6 +91,7 @@ horizon_reversion_times = 20000.0
 reference_reversion_rate_per_second = 1.0
 replications = 20
 event_log = false
+step_diagnostics = false
 observation_interval_reversion_times = 0.01
 simultaneous_book_events_allowed = false
 strategy_monitoring_enabled = false

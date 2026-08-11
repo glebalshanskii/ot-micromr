@@ -179,6 +179,9 @@ is:
 5. the refinement Holm family contains flow paired equivalence within `0.05` and control
    contrast paired equivalence within `0.15 / second`;
 6. `SIM-MOMENTS-002` measured horizon increases to `40000`; the control remains at `20000`.
+7. Per-step quantile arrays are disabled in `SIM-*002`: they are not gate inputs and would
+   require memory linear in tens of millions of adaptive steps. Maximum event probability,
+   step count, hazards and invariant counters remain exact streaming diagnostics.
 
 Using the horizon-10000 pilot SD and worst-case Holm local alpha `0.025`, normal power
 approximations require about 18 seeds for flow at horizon `20000`; doubling the balanced

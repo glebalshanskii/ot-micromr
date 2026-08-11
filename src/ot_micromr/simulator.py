@@ -40,6 +40,7 @@ class SimulationSettings:
     minimum_slope_observations: int
     record_events: bool = True
     sampling_rate_multipliers: tuple[float, ...] = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+    collect_step_diagnostics: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +87,7 @@ def settings_from_spec(values: Mapping[str, Any]) -> SimulationSettings:
                 (1.0, 1.0, 1.0, 1.0, 1.0, 1.0),
             )
         ),
+        collect_step_diagnostics=bool(simulation.get("step_diagnostics", True)),
     )
 
 
@@ -320,8 +322,9 @@ def simulate_replication(
                 strict=True,
             )
         )
-        right_lambda_steps.append(right_sampling_rate * step)
-        step_sizes.append(step)
+        if simulation_settings.collect_step_diagnostics:
+            right_lambda_steps.append(right_sampling_rate * step)
+            step_sizes.append(step)
         step_count += 1
         drift = generator_mid_drift(state, parameters, left_rates)
         coefficient = (
@@ -478,8 +481,6 @@ def simulate_replication(
         out=np.zeros_like(channel_compensator_residuals),
         where=channel_hazard_integrals > 0.0,
     )
-    step_array = np.asarray(step_sizes, dtype=np.float64)
-    right_array = np.asarray(right_lambda_steps, dtype=np.float64)
     metrics: dict[str, Any] = {
         "epsilon": float(epsilon),
         "seed": int(seed),
@@ -540,18 +541,30 @@ def simulate_replication(
         "realised_count_flow_signed_relative_residual": realised_count_flow_residual,
         "event_log_recorded": simulation_settings.record_events,
         "sampling_rate_multipliers": list(simulation_settings.sampling_rate_multipliers),
+        "step_diagnostics_collected": simulation_settings.collect_step_diagnostics,
     }
     for index, channel in enumerate(EVENT_CHANNELS):
         metrics[f"hazard_integral_{channel}"] = float(channel_hazard_integrals[index])
         metrics[f"measured_count_{channel}"] = int(measured_channel_counts[index])
         metrics[f"compensator_residual_{channel}"] = float(channel_compensator_residuals[index])
         metrics[f"compensator_z_{channel}"] = float(channel_compensator_z[index])
-    metrics.update(_quantile_metrics("step_size_seconds", step_array, simulation_settings.diagnostic_quantiles))
-    metrics.update(
-        _quantile_metrics(
-            "lambda_total_right_times_step", right_array, simulation_settings.diagnostic_quantiles
+    if simulation_settings.collect_step_diagnostics:
+        step_array = np.asarray(step_sizes, dtype=np.float64)
+        right_array = np.asarray(right_lambda_steps, dtype=np.float64)
+        metrics.update(
+            _quantile_metrics(
+                "step_size_seconds", step_array, simulation_settings.diagnostic_quantiles
+            )
         )
-    )
+        metrics.update(
+            _quantile_metrics(
+                "lambda_total_right_times_step",
+                right_array,
+                simulation_settings.diagnostic_quantiles,
+            )
+        )
+    else:
+        metrics["step_quantiles_applicability"] = "not_collected_bounded_memory_p3v"
     for lag_seconds, value in acf.items():
         metrics[f"acf_lag_{lag_seconds:g}_seconds"] = value
 

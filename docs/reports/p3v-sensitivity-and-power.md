@@ -55,7 +55,9 @@ Each path now records:
 
 Raw event logs are disabled in `SIM-*002`; the required CSV remains as a header-only audit
 artifact. This removes about 112 MiB of historical-style event output without deleting
-seed-level sufficient diagnostics.
+seed-level sufficient diagnostics. Per-step quantile arrays are also disabled for the long
+powered runs; exact streaming step counts and maximum event probability remain, avoiding
+an otherwise multi-gigabyte memory cost per concurrent batch.
 
 ## Power design after sensitivity
 
