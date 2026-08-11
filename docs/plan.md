@@ -626,10 +626,13 @@ status **supported**, переход к P4 разрешён.
 До реализации P4 выполнен backend benchmark на representative endpoint band kernel
 (20 paths × 50000 observations × 21 thresholds). Compiled CUDA с включённым transfer
 получил `123.2x` speedup в `float64` относительно vectorized NumPy при максимальной
-ошибке rate `2.9e-13`; поэтому policy/threshold post-processing P4 использует optional
-PyTorch CUDA backend и `torch.compile`. CPU event-path generator сохраняет измеренный
-10-process backend, пока отдельная реализация не докажет end-to-end выигрыш без изменения
-scientific semantics.
+ошибке rate `2.9e-13`. Дополнительный 84-million-element benchmark показал, что compiled
+`float32` ещё в `1.26x` быстрее `float64`, уменьшает runtime на 20.7%, сохраняет counts
+точно и имеет maximum rate error `7.19e-6` (`1.82e-7` reference scale). Поэтому policy/threshold post-processing P4
+использует optional PyTorch CUDA backend и `torch.compile`, с `float32` как primary
+candidate и `float64` как regression oracle. CPU event-path generator сохраняет
+измеренный 10-process backend, пока отдельная реализация не докажет end-to-end выигрыш
+без изменения scientific semantics.
 
 Backend decision: [`ADR-0007`](adr/0007-p4-hybrid-cpu-cuda-backend.md).
 

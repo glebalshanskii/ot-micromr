@@ -136,9 +136,16 @@ Representative workload: 20 paths, 50000 observations per path and 21 thresholds
 
 Cold compilation cost was `3.22 s` for `float32` and `0.94 s` for `float64`; it is
 amortised by the planned repeated P4 evaluations. The P4 policy/threshold post-processing
-backend is therefore compiled CUDA `float64`. This decision does not port the adaptive
-event generator to GPU and does not require NumPy/Torch RNG sequence identity. Raw
-engineering artifact: `outputs/p3v/band-backends.json`.
+backend was initially compiled CUDA `float64`. A subsequent 84-million-element benchmark
+with ten repetitions measured `0.01516 s` in compiled `float32` and `0.01912 s` in
+compiled `float64`: `float32` was `1.26x` faster and reduced end-to-end runtime by 20.7%.
+Counts remained exact and maximum absolute rate error was `7.19e-6`, or `1.82e-7` of
+the maximum reference-rate scale. Therefore `float32`
+is the primary P4 candidate, with `float64` retained as regression oracle; the final freeze
+still requires the full continuous-crossing kernel to pass. This decision does not port
+the adaptive event generator to GPU and does not require NumPy/Torch RNG sequence identity.
+Raw engineering artifacts: `outputs/p3v/band-backends.json` and
+`outputs/p3v/band-backends-large.json`.
 
 ## Remaining limitation
 

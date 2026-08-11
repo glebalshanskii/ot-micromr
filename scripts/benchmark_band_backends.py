@@ -70,11 +70,17 @@ def _to_numpy(torch: Any, result: tuple[Any, ...]) -> tuple[np.ndarray, ...]:
 
 def _comparison(reference: Any, candidate: tuple[np.ndarray, ...]) -> dict[str, Any]:
     rate, fills, flips, open_share = candidate
+    maximum_rate_scale = float(np.max(np.abs(reference.reward_rate_per_second)))
+    maximum_rate_error = float(
+        np.max(np.abs(reference.reward_rate_per_second - rate))
+    )
     return {
         "fill_count_exact": bool(np.array_equal(reference.fill_count, fills)),
         "completed_flip_count_exact": bool(np.array_equal(reference.completed_flip_count, flips)),
-        "reward_rate_max_abs_error": float(
-            np.max(np.abs(reference.reward_rate_per_second - rate))
+        "reward_rate_max_abs_error": maximum_rate_error,
+        "reward_rate_max_abs_reference_scale": maximum_rate_scale,
+        "reward_rate_max_abs_error_over_reference_scale": (
+            maximum_rate_error / maximum_rate_scale if maximum_rate_scale > 0.0 else 0.0
         ),
         "open_fill_share_max_abs_error": float(
             np.max(np.abs(reference.open_fill_share - open_share))
@@ -192,6 +198,22 @@ def main() -> int:
                     "comparison_eager": _comparison(reference, eager_candidate),
                     "comparison_compiled": _comparison(reference, compiled_candidate),
                 }
+
+            float32_result = payload["torch"]["float32"]
+            float64_result = payload["torch"]["float64"]
+            payload["torch"]["float32_vs_float64"] = {
+                "compiled_end_to_end_speedup": (
+                    float64_result["compiled_end_to_end_median_seconds"]
+                    / float32_result["compiled_end_to_end_median_seconds"]
+                ),
+                "compiled_resident_speedup": (
+                    float64_result["compiled_resident_median_seconds"]
+                    / float32_result["compiled_resident_median_seconds"]
+                ),
+                "end_to_end_runtime_reduction_fraction": 1.0
+                - float32_result["compiled_end_to_end_median_seconds"]
+                / float64_result["compiled_end_to_end_median_seconds"],
+            }
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
