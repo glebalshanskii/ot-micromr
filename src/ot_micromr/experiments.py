@@ -34,6 +34,7 @@ from ot_micromr.artifacts import (
 )
 from ot_micromr.config import RunSpec
 from ot_micromr.errors import ExperimentError
+from ot_micromr.figure4_experiments import evaluate_figure4
 from ot_micromr.simulation_experiments import evaluate_simulation
 
 
@@ -398,6 +399,23 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
         figure_name = (
             "sim-moments.png" if spec.experiment_id.startswith("SIM-MOMENTS-") else "sim-unbalanced.png"
         )
+    if spec.experiment_id.startswith("SIM-FIG4-"):
+        paths_by_class.update(
+            {
+                "metrics_raw": [
+                    run_directory / "metrics" / "seed_threshold_metrics.csv",
+                    run_directory / "metrics" / "path_diagnostics.csv",
+                ],
+                "table": [
+                    run_directory / "tables" / "curve_summary.csv",
+                    run_directory / "tables" / "functionals.csv",
+                ],
+                "figure_data": [run_directory / "figures" / "figure4-data.csv"],
+                "figure": [run_directory / "figures" / "figure4.png"],
+                "calibration_table": [run_directory / "tables" / "calibration.csv"],
+                "fill_log": [run_directory / "records" / "fills.csv"],
+            }
+        )
         paths_by_class.update(
             {
                 "metrics_raw": [run_directory / "metrics" / "seed_metrics.csv"],
@@ -487,6 +505,8 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_fig3(spec, run_directory)
         elif spec.experiment_id.startswith(("SIM-MOMENTS-", "SIM-UNBALANCED-")):
             evaluation = evaluate_simulation(spec, run_directory)
+        elif spec.experiment_id.startswith("SIM-FIG4-"):
+            evaluation = evaluate_figure4(spec, run_directory)
         else:
             raise ExperimentError(f"experiment runner is not implemented: {spec.experiment_id}")
         metrics = evaluation.metrics
@@ -531,6 +551,45 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
         )
         atomic_write_json(run_directory / "metrics" / "summary.json", summary)
 
+    is_figure4 = spec.experiment_id.startswith("SIM-FIG4-")
+    numerics_manifest = (
+        {
+            "market_float_dtype": spec.values["numerics"]["market_float_dtype"],
+            "reduction_float_dtype": spec.values["numerics"]["reduction_float_dtype"],
+            "device": "cpu_market_plus_optional_cuda_reduction",
+            "known_nondeterministic_kernels": [],
+        }
+        if is_figure4
+        else {
+            "float_dtype": spec.values["numerics"]["float_dtype"],
+            "device": "cpu",
+            "known_nondeterministic_kernels": [],
+        }
+    )
+    seed_manifest = (
+        {
+            "rng_used": spec.values["seed_policy"]["rng_used"],
+            "rng_algorithm": spec.values["seed_policy"]["rng_algorithm"],
+            "calibration_seeds": list(spec.values["seed_policy"]["calibration_seeds"]),
+            "strategy_seeds": list(spec.values["seed_policy"]["strategy_seeds"]),
+            "deterministic_replay_seeds": list(
+                spec.values["seed_policy"]["deterministic_replay_seeds"]
+            ),
+        }
+        if is_figure4
+        else {
+            "rng_used": spec.values["seed_policy"]["rng_used"],
+            "rng_algorithm": spec.values["seed_policy"]["rng_algorithm"],
+            "seed_to_replication": [
+                {
+                    "seed": int(seed),
+                    "replication": index,
+                    "consumed": bool(spec.values["seed_policy"]["rng_used"]),
+                }
+                for index, seed in enumerate(spec.values["seed_policy"]["seeds"])
+            ],
+        }
+    )
     manifest = {
         "schema_version": "run-manifest-v1",
         "run_id": run_id,
@@ -559,23 +618,8 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             "dataset": spec.values["inputs"]["dataset"],
         },
         "environment": environment_provenance(repository_root),
-        "numerics": {
-            "float_dtype": spec.values["numerics"]["float_dtype"],
-            "device": "cpu",
-            "known_nondeterministic_kernels": [],
-        },
-        "seeds": {
-            "rng_used": spec.values["seed_policy"]["rng_used"],
-            "rng_algorithm": spec.values["seed_policy"]["rng_algorithm"],
-            "seed_to_replication": [
-                {
-                    "seed": int(seed),
-                    "replication": index,
-                    "consumed": bool(spec.values["seed_policy"]["rng_used"]),
-                }
-                for index, seed in enumerate(spec.values["seed_policy"]["seeds"])
-            ],
-        },
+        "numerics": numerics_manifest,
+        "seeds": seed_manifest,
         "derived_parameters": _plain(derived),
         "warnings": warnings,
         "deviations": [],

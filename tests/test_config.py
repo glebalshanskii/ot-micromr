@@ -84,6 +84,13 @@ class RunSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "executable validator supports only"):
             validate_runspec(data)
 
+    def test_figure4_pilot_contract_validates(self) -> None:
+        data = load_data("sim_fig4_pilot_001.toml")
+        validate_runspec(data)
+        data["simulation"]["implicit_dt"] = 0.1
+        with self.assertRaisesRegex(ConfigError, "unknown fields"):
+            validate_runspec(data)
+
     def test_unknown_simulation_field_is_rejected(self) -> None:
         data = load_data("sim_moments_001.toml")
         data["simulation"]["implicit_dt"] = 0.1
