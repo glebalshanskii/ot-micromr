@@ -67,6 +67,13 @@ class AnalyticalFormulaTests(unittest.TestCase):
         for gamma in (0.05, 0.4, 1.7):
             self.assertEqual(normalized_surrogate_rate(gamma, gamma), 0.0)
 
+    def test_surrogate_rate_decays_in_far_tail(self) -> None:
+        for gamma in (0.25, 0.5, 1.0):
+            rate_at_grid_end = normalized_surrogate_rate(3.0, gamma)
+            rate_in_far_tail = normalized_surrogate_rate(8.0, gamma)
+            self.assertLess(rate_in_far_tail, rate_at_grid_end)
+            self.assertLess(rate_in_far_tail, 1e-12)
+
     def test_dimensional_scaling(self) -> None:
         normalized = normalized_surrogate_rate(1.2, 0.4)
         dimensional = dimensional_surrogate_rate(1.2, 0.4, 2.5, 3.0)

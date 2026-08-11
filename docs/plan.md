@@ -2,12 +2,12 @@
 
 > **Обновлено:** 2026-08-11
 >
-> **Ветка:** `docs/p1-research-contracts`
+> **Ветка:** `feat/p2-analytical-baseline`
 >
-> **Текущий статус:** P1 — research contracts и synthetic protocol завершены
+> **Текущий статус:** P2 — analytical executable baseline завершён; Figure 3 reproduced
 >
-> **Следующий шаг:** P2 — реализовать strict `RunSpec v1` loader, analytical Dawson
-> baseline и выполнить только `ANA-SMOKE-001`
+> **Следующий шаг:** P3 — реализовать controlled jump simulator и сначала пройти
+> pathwise invariants до запуска `SIM-MOMENTS-001`
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -384,8 +384,8 @@ source TOML после запуска не переписывается под �
 |---|---|---|---|
 | P0. Source audit и план | Common | **completed** | PDF/source проверены, unknowns и scope зафиксированы |
 | P1. Contracts и protocols | Common | **completed** | ADRs, schema, configs и acceptance thresholds приняты до runs |
-| P2. Analytical executable baseline | Synthetic | **next** | Closed forms, tests, smoke run и Figure 3 reproduction |
-| P3. Jump simulator и theorem checks | Synthetic | pending | Invariants, timestep convergence, moments/ACF report |
+| P2. Analytical executable baseline | Synthetic | **completed** | Closed forms, tests, smoke run и Figure 3 reproduction |
+| P3. Jump simulator и theorem checks | Synthetic | **next** | Invariants, timestep convergence, moments/ACF report |
 | P4. Figures 2/4/5 и paper report | Synthetic | pending | Claim matrix с reproduced/not-reproduced/underdetermined |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
 | P6. Causal efficient-price estimation | Empirical | pending | Synthetic recovery и real-data diagnostics без P&L tuning |
@@ -440,7 +440,7 @@ strict typed validator и target experiments ещё не реализованы 
 Factual closeout: [`docs/reports/p1-contracts.md`](reports/p1-contracts.md). Contract
 commit: `36d606e`.
 
-### P2. Minimal analytical baseline
+### P2. Minimal analytical baseline — completed
 
 Задачи:
 
@@ -472,6 +472,24 @@ Acceptance:
 - reproduce/contradict status для claims Figure 3 дан с numeric table, не только plot;
 - проходят `uv run python main.py`, package CLI и relevant unit tests после появления
   package/CLI.
+
+Результат P2 — **passed / reproduced**. Из clean commit `710efa9` сначала прошёл
+`ANA-SMOKE-001`, затем `ANA-FIG3-001`. Smoke дал $u_D=1.1558728538424254$ при
+$\gamma=0.4$, Dawson residual $2.22\times10^{-16}$ и discrepancy с независимым
+bounded optimizer $1.80\times10^{-8}$ при gate $10^{-7}$. На 296-point Figure 3 grid
+maximum residual равен $1.16\times10^{-13}$; maximum rate loss при
+$\gamma\ge0.4$ равен `0.023035703614617375` at $\gamma=1.66$, в соответствии с
+preregistered audit. Все myopic rates в точках $u=\gamma$ равны нулю, grid endpoints
+лежат на нисходящей ветви rate curves, а exact tail стремится к нулю по asymptotic
+росту `erfi`.
+
+Implementation включает strict immutable validator для двух P2 analytical contracts,
+canonical serialization, atomic `run-manifest-v1`, raw CSV/table/PNG separation и
+CLI. Зафиксированы NumPy 2.5.2, SciPy 1.18.0 и Matplotlib 3.11.1 в `uv.lock`; 25 unit
+tests и оба entrypoints проходят. `SIM-*` typed schema намеренно остаётся P3 scope.
+
+Factual closeout: [`docs/reports/p2-analytical-reproduction.md`](reports/p2-analytical-reproduction.md).
+Architecture/dependency decision: [`ADR-0003`](adr/0003-analytical-baseline-stack.md).
 
 ### P3. Exact-model dynamics и controlled numerical simulator
 
@@ -711,8 +729,8 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 
 | Experiment ID | Config | Claim/output | Status |
 |---|---|---|---|
-| `ANA-SMOKE-001` | `cfg/experiments/ana_smoke_001.toml` | One config, Dawson residual, one metric | preregistered; not run |
-| `ANA-FIG3-001` | `cfg/experiments/ana_fig3_001.toml` | Surrogate thresholds/rate curves | preregistered; not run |
+| `ANA-SMOKE-001` | `cfg/experiments/ana_smoke_001.toml` | One config, Dawson residual, one metric | passed; `20260811T170052058822Z-290ea5809cb6-det` |
+| `ANA-FIG3-001` | `cfg/experiments/ana_fig3_001.toml` | Surrogate thresholds/rate curves | reproduced; `20260811T170104389894Z-4c1014e843c6-det` |
 | `SIM-MOMENTS-001` | `cfg/experiments/sim_moments_001.toml` | Parity, drift, variance, ACF, occupancy | preregistered; not run |
 | `SIM-UNBALANCED-001` | `cfg/experiments/sim_unbalanced_001.toml` | One-factor parity-drift negative control | preregistered; not run |
 | `SIM-FIG4-001` | `cfg/experiments/sim_fig4_001.toml` | Jump versus surrogate band sweep | preregistered; not run; underdetermined-author-settings |
@@ -760,9 +778,10 @@ P1 configs зарегистрированы как strict TOML contracts; буд
 
 ## 9. Ближайший исполняемый шаг
 
-P2 начинается с `uv add numpy scipy`, создания importable package `src/ot_micromr/` и
-strict validator/canonical serializer для `RunSpec v1`. Затем реализуются только
-Dawson solver, surrogate rate, artifact manifest minimum и unit tests, необходимые для
-`ANA-SMOKE-001`; этот единственный smoke run выполняется первым и останавливает
-analytical track при failure. Figure 3 следует только после smoke gate. Jump simulator,
-market data и backtest не входят в ближайший executable baseline.
+P3 начинается с расширения strict typed schema на `SIM-MOMENTS-001` и минимальных
+domain/runtime state для six event types из ADR-0002. До target Monte Carlo run нужны
+unit/property tests на nonnegative intensities, allowed jumps, parity lock, canonical
+$G=M-X$, event ordering, deterministic replay и Brownian observation boundaries.
+После внутреннего tiny smoke выполняется preregistered resolution ladder
+`q_max={0.02,0.01,0.005}` для `SIM-MOMENTS-001`; failure invariants или convergence
+останавливает этап до Figure 4. Market data и backtest в P3 не входят.

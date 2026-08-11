@@ -27,6 +27,9 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv) if argv is not None else sys.argv[1:]
     parser = _parser()
+    if not arguments:
+        parser.print_help()
+        return 0
     parsed = parser.parse_args(arguments)
     try:
         spec = load_runspec(parsed.path)
