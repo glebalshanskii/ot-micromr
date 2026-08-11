@@ -688,6 +688,9 @@ Original runner status `acceptance_failed` был вызван только all-
 Inward shift 15% и 20% supported для gamma `0.272/0.342`, high-gamma 5% inconclusive;
 refinement family inconclusive. P4 получает status
 **completed / operational validity passed / scientific inconclusive**.
+Corrected review policy `p4-operational-validity-v2` выполнена implementation file из clean
+commit `5c60e490f02b6036d28160df94cce634aee23280`; review artifact SHA-256
+`f88615979b4b5c905ec541f715ff4ca6f938f66bf9f1f70c9fa2c3224ffd4466`.
 Полный evidence report: [`paper-reproduction.md`](reports/paper-reproduction.md).
 
 Следующий шаг — P5: выбрать licensed event-level source и до просмотра P&L заморозить

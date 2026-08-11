@@ -4,10 +4,11 @@
 - Paper: Amaral, *Optimal Trading of Microstructure Mean Reversion*,
   `arXiv:2608.00885v1`
 - Result label: `independent_partial_reproduction`
-- Stage outcome: **completed / operational acceptance failed / scientific inconclusive**
+- Stage outcome: **completed / operational validity passed / scientific inconclusive**
 - Protocol: [`p4-figure-reconstruction.md`](../protocols/synthetic/p4-figure-reconstruction.md)
 - Decisions: [`ADR-0007`](../adr/0007-p4-hybrid-cpu-cuda-backend.md),
-  [`ADR-0008`](../adr/0008-p4-crossing-execution-and-inference.md)
+  [`ADR-0008`](../adr/0008-p4-crossing-execution-and-inference.md),
+  [`ADR-0009`](../adr/0009-correct-p4-operational-acceptance.md)
 
 ## Outcome
 
@@ -21,11 +22,18 @@ The result is mixed. At gamma `0.272` and `0.342`, the discrete rate peaks moved
 inconclusive. Only the low-gamma row closely matched the paper's described rate losses.
 The six-test resolution-refinement family was inconclusive after Holm correction.
 
-Formal operational acceptance failed only because 38 of 4,320 seed-threshold cells had fewer
-than the preregistered 20 complete intervals; the minimum was 12. These were almost entirely
-far-right thresholds (`1.45--1.60 theta_D`) in the highest-gamma row. The three primary peak
-cells had at least 80, 75 and 48 intervals per seed respectively. This contextualises the
-failure but does not override the preregistered all-cell gate.
+The original runner reported `acceptance_failed` because 38 of 4,320 seed-threshold-resolution
+cells had fewer than 20 complete inter-fill intervals. Post-target audit established that this
+was an unpowered heuristic over dependent within-path cycles, not an operational-validity or
+independent-sample requirement. ADR-0009 supersedes that decision rule. A deterministic review
+of the frozen evidence passes all 11 corrected operational gates; no path, parameter, estimator,
+bootstrap result or scientific test was changed.
+
+The count remains visible as coverage information: the minimum was 12, and 38 cells (0.88%)
+fell below the historical value 20. They were concentrated in remote low-turnover thresholds;
+the three primary peak cells had minima 80, 75 and 48. Precision of the scientific comparisons
+is decided by the frozen 30-seed cluster design, confidence intervals and multiplicity-adjusted
+tests, not this count.
 
 ## Provenance and setup
 
@@ -33,7 +41,10 @@ failure but does not override the preregistered all-cell gate.
 |---|---|
 | Experiment | `SIM-FIG4-002` |
 | Run ID | `20260811T202753134457Z-837035232ead-det` |
-| Git commit | `ca9aa7c1e9841fccb35f47f41a8e0863e795d3c7` |
+| Simulation commit | `ca9aa7c1e9841fccb35f47f41a8e0863e795d3c7` |
+| Corrected-review commit | `5c60e490f02b6036d28160df94cce634aee23280` |
+| Corrected policy | `p4-operational-validity-v2` |
+| Review artifact SHA-256 | `f88615979b4b5c905ec541f715ff4ca6f938f66bf9f1f70c9fa2c3224ffd4466` |
 | RunSpec SHA-256 | `837035232ead731c04a7d0a04970831a0388c55867a40e8d606f65d0f8f28201` |
 | Source config SHA-256 | `74de348d2e3f0406770590749178d284ec2570fe3dbb9c50778155a2148ddf8f` |
 | Seeds | 12 calibration; 30 independent target strategy seeds |
@@ -85,11 +96,18 @@ using independent Welch TOST, margin 0.02 and Holm correction across six checks.
 equivalence p-values ranged from 0.124 to 0.345, so every check was inconclusive. No extra
 seeds were added after inspection.
 
-All deterministic gates passed: requested rows/seeds/thresholds were complete; every policy
-was non-flat at measurement; state and non-finite violations were zero; deterministic market
-replay matched; maximum omitted-crossing bound was `5.28e-11`; maximum wealth-marking identity
-residual was `4.26e-14`. The all-cell 20-interval floor failed, producing the immutable
-`acceptance_failed` run status.
+The corrected operational policy tests completeness and validity rather than an arbitrary
+exposure count. All 11 gates passed: coordinate and policy grids were complete; every requested
+rate estimator was defined and finite; every policy was non-flat at measurement; state and
+non-finite violations were zero; deterministic market replay matched; maximum Dawson residual
+was `4.13e-14`; maximum omitted-crossing bound was `5.28e-11`; maximum wealth-marking identity
+residual was `4.26e-14`.
+
+The original `summary.json` and manifest remain unchanged and therefore still contain the
+historical `acceptance_failed` value. The separate corrected review is canonical for operational
+status. This preserves provenance without preserving the mistaken conclusion. Scientific status
+remains `inconclusive`: two primary row claims are supported, the high-gamma row is inconclusive,
+and no refinement comparison passes family-adjusted equivalence.
 
 ## Figures 2 and 5
 
@@ -134,3 +152,7 @@ Claim statuses:
 
 Canonical raw evidence is the immutable run directory
 [`outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det`](../../outputs/SIM-FIG4-002/20260811T202753134457Z-837035232ead-det/).
+The canonical operational decision is the derived
+[`review.json`](../../outputs/SIM-FIG4-REVIEW-001/20260811T202753134457Z-837035232ead-det-acceptance-v2/metrics/review.json),
+which hashes every source evidence file and records a clean implementation commit. It is
+regenerated without market simulation by `ot-micromr review-p4-acceptance`.
