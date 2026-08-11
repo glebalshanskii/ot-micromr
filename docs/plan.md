@@ -2,12 +2,12 @@
 
 > **Обновлено:** 2026-08-11
 >
-> **Ветка:** `docs/reproduction-plan`
+> **Ветка:** `docs/p1-research-contracts`
 >
-> **Текущий статус:** P0 — анализ статьи и планирование завершены
+> **Текущий статус:** P1 — research contracts и synthetic protocol завершены
 >
-> **Следующий шаг:** P1 — зафиксировать mathematical/data/experiment contracts и
-> preregister synthetic smoke run до написания симулятора
+> **Следующий шаг:** P2 — реализовать strict `RunSpec v1` loader, analytical Dawson
+> baseline и выполнить только `ANA-SMOKE-001`
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -326,25 +326,28 @@ protocols до запусков.
 - metrics/statistics/report generation;
 - artifact store с atomic run manifest.
 
-Точный import-package path нужно зафиксировать в ADR P1: `AGENTS.md` задаёт
-`src/ot-micromr/`, тогда как Python import namespace не может содержать hyphen. До ADR
-не создавать расходящиеся package layouts.
+[`ADR-0001`](adr/0001-research-modes-package-and-run-contract.md) зафиксировал
+import-package `src/ot_micromr/`, distribution/CLI `ot-micromr` и единый module CLI.
+Package ещё не создан: это P2 implementation, а не результат P1.
 
 ### 4.2. Configuration contract
 
-Каждый executable config в `cfg/experiments/` должен полностью задавать:
+Каждый executable config в `cfg/experiments/` использует strict TOML `RunSpec v1` и
+полностью задаёт:
 
-- `experiment_id`, `track`, `mode` (`paper-faithful` или `practical-local`);
+- `experiment_id`, `track`, `mode` (`paper-faithful`, `practical-local` или
+  non-claim `oracle-diagnostic`);
 - model/simulator/filter/strategy/execution parameters и units;
 - seed или ordered seed list;
 - dataset ID, immutable version/hash, venue, symbol, tick/contract specification;
 - chronological split boundaries и timezone/session policy;
 - cost and latency scenarios;
 - metrics, statistical tests, bootstrap scheme и acceptance thresholds;
-- output root, code commit, environment lock/hash, hardware and precision.
+- output root, precision и требование clean/claim-eligible run.
 
-Resolved config и runtime-derived fields сохраняются в run manifest; config после
-запуска не переписывается под результат.
+Config не содержит неизвестные до запуска commit, environment, hardware и timestamps.
+Resolved config и эти runtime-derived facts сохраняются в immutable run manifest;
+source TOML после запуска не переписывается под результат.
 
 ### 4.3. Canonical market-event contract
 
@@ -380,8 +383,8 @@ Resolved config и runtime-derived fields сохраняются в run manifest
 | Stage | Track | Status | Completion gate |
 |---|---|---|---|
 | P0. Source audit и план | Common | **completed** | PDF/source проверены, unknowns и scope зафиксированы |
-| P1. Contracts и protocols | Common | **next** | ADRs, schemas, configs и acceptance thresholds приняты до runs |
-| P2. Analytical executable baseline | Synthetic | pending | Closed forms, tests, smoke run и Figure 3 reproduction |
+| P1. Contracts и protocols | Common | **completed** | ADRs, schema, configs и acceptance thresholds приняты до runs |
+| P2. Analytical executable baseline | Synthetic | **next** | Closed forms, tests, smoke run и Figure 3 reproduction |
 | P3. Jump simulator и theorem checks | Synthetic | pending | Invariants, timestep convergence, moments/ACF report |
 | P4. Figures 2/4/5 и paper report | Synthetic | pending | Claim matrix с reproduced/not-reproduced/underdetermined |
 | P5. Data feasibility и universe freeze | Empirical | pending | Licensed dataset, quality gate, immutable splits |
@@ -403,33 +406,39 @@ Resolved config и runtime-derived fields сохраняются в run manifest
 
 Проверки P0 — только documentation/source checks; experiment results ещё не получены.
 
-### P1. Mathematical, simulation и experiment contracts — next
+### P1. Mathematical, simulation и experiment contracts — completed
 
-Задачи:
+Выполнено до любых target runs:
 
-1. Создать ADR для scope/units/package layout и `RunSpec`/artifact schema.
-2. Создать ADR simulator time/event semantics. Brownian-dependent intensities не дают
-   тривиального exact next-event sampler; выбранная approximation должна иметь явный
-   error control, а не называться exact simulation algorithm без доказательства.
-3. Preregister `docs/protocols/synthetic/paper-reproduction.md`: primitives, seed list,
-   burn-in, horizon, discretization/refinement, estimators, confidence intervals и
-   tolerances.
-4. Завести минимальные configs `paper_smoke`, `figure3`, `moment_checks`, `figure4`.
-5. Зафиксировать default numerical precision и dependency rationale; зависимости
-   добавлять только через `uv add`; отдельно проверить поддержку Python 3.14 у
-   scientific stack и оформить ADR, если project constraint нужно менять.
-6. Сохранить Figure 4 as `underdetermined`; запрос author configs/code возможен только
-   как отдельное внешнее действие после согласия пользователя.
-7. Обновить `.gitignore` до первого artifact run: исключить `outputs/`, raw/processed
-   datasets, checkpoints, logs, secrets и private artifacts, не скрывая configs/reports.
+1. [`ADR-0001`](adr/0001-research-modes-package-and-run-contract.md) разделил tracks и
+   information-set modes, зафиксировал units, package/CLI naming, strict TOML
+   `RunSpec v1`, runtime manifest и immutable artifact layout.
+2. [`ADR-0002`](adr/0002-controlled-jump-simulation-semantics.md) зафиксировал
+   `adaptive_left_hazard_single_jump_v1`: frozen-left event approximation, mandatory
+   observation boundaries, event ordering, hybrid Brownian first-hit semantics,
+   deterministic RNG mapping, invariant suite и epsilon refinement.
+3. Зарегистрирован
+   [`paper-reproduction.md`](protocols/synthetic/paper-reproduction.md) с primitives,
+   20 seeds, horizons, statistical estimands, simultaneous inference, acceptance и stop
+   rules. Protocol имеет статус `preregistered`; target outputs не просматривались.
+4. Созданы пять executable contracts: `ANA-SMOKE-001`, `ANA-FIG3-001`,
+   `SIM-MOMENTS-001`, one-factor negative control `SIM-UNBALANCED-001` и independent
+   partial reconstruction `SIM-FIG4-001`. Последний сохраняет author settings как
+   `underdetermined` и не требует numeric match с paper ranges.
+5. Default precision — CPU `float64`. P1 не добавил dependencies; подтверждено наличие
+   CPython 3.14 wheels у актуальных NumPy/SciPy, а exact pins откладываются до `uv add`
+   и `uv.lock` в P2.
+6. `.gitignore` до artifact runs исключает outputs, raw datasets, logs, checkpoints,
+   secrets и caches. Import path в `AGENTS.md` исправлен на `src/ot_micromr/`.
 
-Default Monte Carlo plan: один deterministic smoke seed и не менее 20 независимых seeds
-для confirmatory synthetic results; burn-in и horizon задаются в units $1/\alpha$ после
-power/ESS calculation. Изменение этого числа требует dated protocol amendment до
-просмотра target result.
+Gate P1 — **passed**: все пять TOML parse standard-library `tomllib`, IDs/required
+tables/units/seeds/refinement contracts согласованы, local links и paper hash проверены,
+`git diff --check` проходит. Два независимых adversarial review не оставили High/Medium
+blockers. Это structural/preregistration evidence, не scientific result: simulator,
+strict typed validator и target experiments ещё не реализованы и не запускались.
 
-Gate P1: все choices, способные изменить result, записаны до первого full run; smoke
-config сериализуется без hidden defaults.
+Factual closeout: [`docs/reports/p1-contracts.md`](reports/p1-contracts.md). Contract
+commit: `36d606e`.
 
 ### P2. Minimal analytical baseline
 
@@ -457,8 +466,8 @@ Reference checkpoints из независимо вычисляемых paper for
 Acceptance:
 
 - closed forms согласованы независимыми direct integration/optimization checks;
-- double-precision unit identities проходят с preregistered tolerance (ориентир
-  `rtol <= 1e-10`, окончательно фиксируется в P1);
+- double-precision identities проходят с exact tolerances, уже зафиксированными в
+  `ana_smoke_001.toml` и `ana_fig3_001.toml`;
 - myopic $\widetilde R(\phi)=0$ и rate стремится к нулю на дальнем конце grid;
 - reproduce/contradict status для claims Figure 3 дан с numeric table, не только plot;
 - проходят `uv run python main.py`, package CLI и relevant unit tests после появления
@@ -488,8 +497,8 @@ Acceptance:
 - ни одного invariant violation в smoke/full logs;
 - halving step меняет primary estimates не больше preregistered numerical tolerance или
   их Monte Carlo uncertainty;
-- theoretical drift/moments лежат в simultaneous confidence bands на preregistered bins
-  и lags; exact thresholds не подгоняются после просмотра;
+- theoretical finite-h parity slopes и ACF лежат в simultaneous confidence bands на
+  preregistered lags; gap bins остаются заранее заданным descriptive diagnostic;
 - negative/unbalanced control обнаруживает parity split ожидаемого знака;
 - report содержит effective sample size, seeds, burn-in, horizon, runtime и hardware.
 
@@ -500,8 +509,8 @@ Acceptance:
 1. Figure 2: structural sample path с явно выбранными illustrative primitives; не
    называть pixel-identical reproduction.
 2. Figure 4: sweep $\theta/\theta_D$ для preregistered parameter families, включая
-   $\gamma\approx0.28,0.36,0.47$; оценить true band-class optimum, 1 SE, overshoot,
-   loss at $\theta_D$ и $\theta^*$.
+   $\gamma\approx0.28,0.36,0.47$; оценить discrete-grid peak mean-rate curve,
+   diagnostic fitted peak, 1 SE, overshoot, loss at $\theta_D$ и $\theta^*$.
 3. Проверить refinement по $\delta/\theta$, open occupancy $p$, ramp share и horizon.
 4. Figure 5: pathwise signal, fills, two-lot flips, spread-aware bands и both wealth
    markings; slope comparison только после stationary burn-in. Figure 5 использует
@@ -696,20 +705,23 @@ Profitability gate:
 
 ## 6. Начальная experiment matrix
 
-Имена configs являются planned contract и создаются/уточняются в P1 до запусков.
+P1 configs зарегистрированы как strict TOML contracts; будущие имена остаются planned
+до своих protocol stages. Разные information-set modes не агрегируются без явной
+колонки `mode`.
 
-| Experiment ID | Planned config | Claim/output | Status |
+| Experiment ID | Config | Claim/output | Status |
 |---|---|---|---|
-| `ANA-SMOKE-001` | `cfg/experiments/paper_smoke.yaml` | One config, Dawson residual, one metric | pending |
-| `ANA-FIG3-001` | `cfg/experiments/figure3.yaml` | Surrogate thresholds/rate curves | pending |
-| `SIM-MOMENTS-001` | `cfg/experiments/moment_checks.yaml` | Parity, drift, variance, ACF, occupancy | pending |
-| `SIM-FIG4-001` | `cfg/experiments/figure4.yaml` | Jump versus surrogate band sweep | underdetermined-author-settings |
-| `SIM-FIG5-001` | `cfg/experiments/figure5.yaml` | Strategy path, fills, wealth identities | pending-illustrative |
-| `EMP-DATA-001` | `cfg/experiments/data_feasibility.yaml` | Eligibility, quality, split freeze | pending-data-source |
-| `EMP-FILTER-001` | `cfg/experiments/filter_validation.yaml` | Oracle/causal filter diagnostics | pending |
-| `BT-SMOKE-001` | `cfg/experiments/backtest_smoke.yaml` | Toy ledger and no-look-ahead | pending |
-| `BT-WF-001` | `cfg/experiments/walk_forward.yaml` | Nested development/validation | pending |
-| `BT-HOLDOUT-001` | `cfg/experiments/holdout.yaml` | Locked primary test | pending |
+| `ANA-SMOKE-001` | `cfg/experiments/ana_smoke_001.toml` | One config, Dawson residual, one metric | preregistered; not run |
+| `ANA-FIG3-001` | `cfg/experiments/ana_fig3_001.toml` | Surrogate thresholds/rate curves | preregistered; not run |
+| `SIM-MOMENTS-001` | `cfg/experiments/sim_moments_001.toml` | Parity, drift, variance, ACF, occupancy | preregistered; not run |
+| `SIM-UNBALANCED-001` | `cfg/experiments/sim_unbalanced_001.toml` | One-factor parity-drift negative control | preregistered; not run |
+| `SIM-FIG4-001` | `cfg/experiments/sim_fig4_001.toml` | Jump versus surrogate band sweep | preregistered; not run; underdetermined-author-settings |
+| `SIM-FIG5-001` | `cfg/experiments/sim_fig5_001.toml` | Strategy path, fills, wealth identities | pending-illustrative |
+| `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | Eligibility, quality, split freeze | pending-data-source |
+| `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Oracle/causal filter diagnostics | pending |
+| `BT-SMOKE-001` | `cfg/experiments/bt_smoke_001.toml` | Toy ledger and no-look-ahead | pending |
+| `BT-WF-001` | `cfg/experiments/bt_wf_001.toml` | Nested development/validation | pending |
+| `BT-HOLDOUT-001` | `cfg/experiments/bt_holdout_001.toml` | Locked primary test | pending |
 
 ## 7. Stop criteria и порядок решений
 
@@ -748,7 +760,9 @@ Profitability gate:
 
 ## 9. Ближайший исполняемый шаг
 
-P1 должен создать минимальный protocol/ADR/config contract для `ANA-SMOKE-001`, после
-чего P2 реализует только Dawson solver, surrogate rate и один smoke metric. Jump
-simulation, market data и backtest не входят в первый executable baseline и не должны
-расширять его до прохождения analytical gate.
+P2 начинается с `uv add numpy scipy`, создания importable package `src/ot_micromr/` и
+strict validator/canonical serializer для `RunSpec v1`. Затем реализуются только
+Dawson solver, surrogate rate, artifact manifest minimum и unit tests, необходимые для
+`ANA-SMOKE-001`; этот единственный smoke run выполняется первым и останавливает
+analytical track при failure. Figure 3 следует только после smoke gate. Jump simulator,
+market data и backtest не входят в ближайший executable baseline.
