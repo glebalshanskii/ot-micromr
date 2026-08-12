@@ -156,7 +156,8 @@ metrics. Fixed computation is one synthetic run and one empirical rolling-origin
 - translation sizes `(1,2,4)` ticks with weights `(0.60,0.25,0.10)`;
 - widening base weight `0.08`, narrowing weight per available tick `0.12`, maximum
   spread change `2` ticks;
-- `dt=0.005 s`, burn-in `30 s`, measurement `60 s`, 64 sessions, 256 particles;
+- originally `dt=0.005 s`, burn-in `30 s`, measurement `60 s`, 64 sessions, 256
+  particles; the dated amendment below refines only `dt` and steps per physical chunk;
 - CUDA `float32`, PyTorch `float64` final statistics, `torch.compile` reduce-overhead.
 
 Primary family `P6M-SYN-PRIMARY-001` has two paired session metrics and Bonferroni
@@ -176,6 +177,24 @@ moment absolute error `<1e-6`, maximum one-step event probability `<0.10`, exact
 zero oracle use before metric evaluation.
 
 Empirical P6M is not run unless this synthetic stage passes.
+
+### Amendment 2026-08-12 after first synthetic run
+
+The first target run
+`FILTER-MARK-SYN-001/20260812T010035485774Z-737bceddd9b4-det` passed state recovery,
+predictive score, posterior calibration, drift, replay and wall-time gates, but failed two
+operational checks. Maximum one-step event probability was `0.12798 > 0.10`, so the
+frozen-left discretization was too coarse. The mark-arithmetic check also exposed a CUDA
+boundary bug: floating `log2/floor` mapped exact powers of two into the previous bucket;
+CPU did not reproduce the error.
+
+Before any empirical run, `dt` is refined from `0.005 s` to `0.0025 s`. Chunk and fixed
+resampling interval increase from 50 to 100 steps, preserving the same `0.25 s` physical
+interval, burn-in, horizon, sessions, particles and all scientific parameters/gates. Bucket
+assignment is changed to exact vectorized integer threshold comparisons at
+`1,2,4,...,128`; no mark definition or acceptance threshold changes. The failed run remains
+immutable and a new synthetic run is required. Consequently, the active synthetic config
+source hash and the empirical dependency hash are updated before that new run.
 
 ## 7. Empirical statistical decisions
 

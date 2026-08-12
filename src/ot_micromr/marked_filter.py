@@ -58,11 +58,11 @@ class MarkTables:
 
 def magnitude_power_bucket(values: torch.Tensor, maximum_power: int = 7) -> torch.Tensor:
     absolute = torch.abs(values).to(torch.int64)
-    positive_bucket = 1 + torch.clamp(
-        torch.floor(torch.log2(torch.clamp_min(absolute, 1).to(torch.float64))).to(torch.int64),
-        max=maximum_power,
+    thresholds = torch.pow(
+        absolute.new_tensor(2),
+        torch.arange(0, maximum_power + 1, device=absolute.device, dtype=torch.int64),
     )
-    return torch.where(absolute == 0, torch.zeros_like(absolute), positive_bucket)
+    return torch.sum(absolute.unsqueeze(-1) >= thresholds, dim=-1).to(torch.int64)
 
 
 def encode_mark(delta_bid: torch.Tensor, delta_ask: torch.Tensor) -> torch.Tensor:
@@ -144,20 +144,21 @@ def _synthetic_mark_tables(spec: RunSpec, device: torch.device) -> MarkTables:
     signs = torch.tensor((-1, 1), device=device, dtype=torch.int64)
     states = torch.arange(1, spread_count + 1, device=device, dtype=torch.int64)
 
-    state_t = states[:, None, None].expand(-1, sizes.numel(), signs.numel())
-    size_t = sizes[None, :, None].expand_as(state_t)
-    sign_t = signs[None, None, :].expand_as(state_t)
+    translation_grid = torch.cartesian_prod(states, sizes, signs)
+    state_t = translation_grid[:, 0]
+    size_t = translation_grid[:, 1]
+    sign_t = translation_grid[:, 2]
     dy_translation = 2 * size_t * sign_t
     dd_translation = torch.zeros_like(dy_translation)
-    weight_translation = translation_weights[None, :, None].expand_as(state_t).to(
-        torch.float32
-    )
+    size_weight_index = torch.searchsorted(sizes, size_t.contiguous())
+    weight_translation = translation_weights[size_weight_index]
 
     maximum_change = int(model["maximum_spread_change_ticks"])
     changes = torch.arange(1, maximum_change + 1, device=device, dtype=torch.int64)
-    state_s = states[:, None, None].expand(-1, changes.numel(), signs.numel())
-    change_s = changes[None, :, None].expand_as(state_s)
-    sign_s = signs[None, None, :].expand_as(state_s)
+    spread_grid = torch.cartesian_prod(states, changes, signs)
+    state_s = spread_grid[:, 0]
+    change_s = spread_grid[:, 1]
+    sign_s = spread_grid[:, 2]
 
     widening_valid = state_s + change_s <= spread_count
     narrowing_valid = state_s - change_s >= 1
@@ -170,28 +171,28 @@ def _synthetic_mark_tables(spec: RunSpec, device: torch.device) -> MarkTables:
 
     all_states = torch.cat(
         (
-            state_t.reshape(-1),
+            state_t,
             state_s[widening_valid],
             state_s[narrowing_valid],
         )
     )
     all_dy = torch.cat(
         (
-            dy_translation.reshape(-1),
+            dy_translation,
             (change_s * sign_s)[widening_valid],
             (change_s * sign_s)[narrowing_valid],
         )
     )
     all_dd = torch.cat(
         (
-            dd_translation.reshape(-1),
+            dd_translation,
             change_s[widening_valid],
             -change_s[narrowing_valid],
         )
     )
     all_weights = torch.cat(
         (
-            weight_translation.reshape(-1),
+            weight_translation,
             widening_weight[widening_valid],
             narrowing_weight[narrowing_valid],
         )

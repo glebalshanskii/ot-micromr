@@ -28,10 +28,10 @@ state_dtype = "float32"
 statistics_dtype = "float64"
 compile_enabled = true
 compile_mode = "reduce-overhead"
-chunk_steps = 50
+chunk_steps = 100
 particle_count = 256
 resampling = "systematic_every_fixed_chunk"
-resampling_interval_steps = 50
+resampling_interval_steps = 100
 nonfinite_policy = "stop"
 
 [inputs]
@@ -66,7 +66,7 @@ corrective_constraint = "unit_directional_first_moment"
 
 [simulation]
 enabled = true
-time_step_seconds = 0.005
+time_step_seconds = 0.0025
 burn_in_seconds = 30.0
 horizon_seconds = 60.0
 session_count = 64

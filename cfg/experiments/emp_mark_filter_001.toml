@@ -52,7 +52,7 @@ p6_dependency_run = "EMP-FILTER-001/20260812T000514761846Z-7075bc32601b-det"
 p6_dependency_manifest_sha256 = "b7c639e49ca49bbb542485341eedb5071b8e515d7d9f061c5aeb7fafed536bc5"
 p6_dependency_state_manifest_sha256 = "df2b9bcf0e087200b9f250a16ac59db2df3462317265b1e688c226ef967e589b"
 synthetic_dependency_config_path = "cfg/experiments/filter_mark_syn_001.toml"
-synthetic_dependency_config_sha256 = "e8431783b9362a4beb22918122cd3a3402d2cef8a2b6b6dc65b482ba3250b3b6"
+synthetic_dependency_config_sha256 = "6bc9e58e2898f44212b0603f0b39f7f6368333754395f7d9d095400d3af6d98c"
 synthetic_dependency_policy = "first_passed_run_matching_config_sha256"
 data_access = "existing_p5_p6_research_days_only_no_pnl"
 
