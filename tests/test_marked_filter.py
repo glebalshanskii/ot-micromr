@@ -11,6 +11,7 @@ from ot_micromr.marked_filter import (
     _inverse_softplus,
     _marked_interval_score,
     _synthetic_mark_tables,
+    _union_fieldnames,
     EmpiricalMarkedDay,
     encode_mark,
     magnitude_power_bucket,
@@ -128,6 +129,10 @@ class MarkedFilterTests(unittest.TestCase):
         self.assertTrue(
             torch.allclose(torch.nn.functional.softplus(raw), rates, rtol=1e-6, atol=1e-6)
         )
+
+    def test_union_fieldnames_accepts_sparse_diagnostic_columns(self) -> None:
+        rows = ({"date": "a", "metric": 1.0}, {"date": "b", "spot_metric": 2.0})
+        self.assertEqual(_union_fieldnames(rows), ["date", "metric", "spot_metric"])
 
     def test_block_median_is_vectorized_and_even_count_uses_midpoint(self) -> None:
         day = EmpiricalMarkedDay(

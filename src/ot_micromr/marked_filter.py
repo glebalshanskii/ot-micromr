@@ -106,6 +106,10 @@ def _tensor_digest(values: Sequence[torch.Tensor]) -> str:
     return digest.hexdigest()
 
 
+def _union_fieldnames(rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    return list(dict.fromkeys(key for row in rows for key in row))
+
+
 def _normal_lower_bound(values: torch.Tensor, alpha: float) -> tuple[float, float, float]:
     sample = values.to(torch.float64)
     mean = sample.mean()
@@ -1982,7 +1986,11 @@ def evaluate_empirical_marked_filter(
 
     inference_rows = primary_rows + calibration_rows + [noninferiority_row] + component_rows
     write_csv(run_directory / "metrics" / "block_metrics.csv", list(block_rows[0]), block_rows)
-    write_csv(run_directory / "metrics" / "day_state.csv", list(state_rows[0]), state_rows)
+    write_csv(
+        run_directory / "metrics" / "day_state.csv",
+        _union_fieldnames(state_rows),
+        state_rows,
+    )
     write_csv(run_directory / "tables" / "fold_parameters.csv", list(parameter_rows[0]), parameter_rows)
     write_csv(run_directory / "tables" / "mark_diagnostics.csv", list(mark_rows[0]), mark_rows)
     write_csv(run_directory / "tables" / "inference.csv", list(inference_rows[0]), inference_rows)
