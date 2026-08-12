@@ -1,9 +1,11 @@
 # P6M marked multi-spread causal filtering protocol
 
-- **Статус:** preregistered before `FILTER-MARK-SYN-001` and
-  `EMP-MARK-FILTER-001` target outputs
+- **Статус:** executed; preregistered before `FILTER-MARK-SYN-001` and
+  `EMP-MARK-FILTER-001` target outputs; protocol rules remain frozen
 - **Дата freeze:** 2026-08-12
 - **Decision:** [`ADR-0015`](../../adr/0015-marked-multi-spread-causal-model.md)
+- **Outcome:** [`ADR-0016`](../../adr/0016-p6m-negative-latent-state-usability.md),
+  [`report`](../../reports/p6m-marked-multi-spread.md)
 - **Paper:** `arXiv:2608.00885v1`
 - **P6 dependency:** `EMP-FILTER-001/20260812T000514761846Z-7075bc32601b-det`
 - **Scope:** causal filtering only; orders, thresholds, fills and P&L are forbidden

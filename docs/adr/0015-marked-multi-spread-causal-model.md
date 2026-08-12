@@ -84,3 +84,12 @@ stateful raw-archive boundary. Отдельные speed benchmarks запуск�
   до model outputs.
 - Отдельный ещё не просмотренный период остаётся необходимым перед окончательным P9
   profitability claim, но не перед разработкой и multi-day evaluation P6M.
+
+## Outcome — 2026-08-12
+
+Synthetic marked filter прошёл все gates. Empirical model поддержал `100%` healthy
+transitions и значительно улучшил held-out event log score, но posterior uncertainty и
+time-rescaling calibration дали powered negative result. P7/P8 остаются blocked.
+Итоговое решение и provenance зафиксированы в
+[`ADR-0016`](0016-p6m-negative-latent-state-usability.md) и
+[`P6M report`](../reports/p6m-marked-multi-spread.md).
