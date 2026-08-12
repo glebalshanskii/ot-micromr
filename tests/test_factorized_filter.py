@@ -7,6 +7,7 @@ import torch
 from ot_micromr.config import load_runspec
 from ot_micromr.factorized_filter import (
     _category_conditionals,
+    _histogram_density,
     causal_rolling_lognormal_parameters,
     conditional_direction_probabilities,
     lognormal_clock_terms,
@@ -72,6 +73,15 @@ class FactorizedFilterTests(unittest.TestCase):
             self.assertTrue(
                 torch.allclose(values.sum(dim=-1), torch.ones_like(values[..., 0]))
             )
+
+    def test_vectorized_histogram_density_integrates_to_one(self) -> None:
+        values = torch.tensor((0.0, 0.5, 1.0, 1.5, 2.0), dtype=torch.float64)
+        edges = torch.tensor((0.0, 1.0, 2.0), dtype=torch.float64)
+        density = _histogram_density(values, edges)
+        self.assertAlmostEqual(float(torch.sum(density * torch.diff(edges))), 1.0)
+        self.assertTrue(
+            torch.allclose(density, torch.tensor((0.4, 0.6), dtype=torch.float64))
+        )
 
 
 if __name__ == "__main__":

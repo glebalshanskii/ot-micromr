@@ -573,19 +573,17 @@ def _histogram_rows(
     duration_edges = torch.linspace(
         float(lower), float(upper), 51, device=combined.device, dtype=torch.float64
     )
-    actual_hist = torch.histogram(actual_log, duration_edges, density=True).hist
-    predictive_hist = torch.histogram(
-        predictive_log, duration_edges, density=True
-    ).hist
+    actual_hist = _histogram_density(actual_log, duration_edges)
+    predictive_hist = _histogram_density(predictive_log, duration_edges)
     duration_centers = 0.5 * (duration_edges[:-1] + duration_edges[1:])
 
     rescaling_upper = max(8.0, float(torch.quantile(rescaling, 0.995)))
     rescaling_edges = torch.linspace(
         0.0, rescaling_upper, 51, device=rescaling.device, dtype=torch.float64
     )
-    rescaling_hist = torch.histogram(
-        torch.clamp(rescaling, max=rescaling_upper), rescaling_edges, density=True
-    ).hist
+    rescaling_hist = _histogram_density(
+        torch.clamp(rescaling, max=rescaling_upper), rescaling_edges
+    )
     rescaling_centers = 0.5 * (rescaling_edges[:-1] + rescaling_edges[1:])
 
     rows: list[dict[str, Any]] = []
@@ -625,6 +623,17 @@ def _histogram_rows(
                 }
             )
     return rows
+
+
+def _histogram_density(values: torch.Tensor, edges: torch.Tensor) -> torch.Tensor:
+    """Vectorized histogram density on CPU or CUDA using PyTorch primitives."""
+    bin_count = edges.numel() - 1
+    indices = torch.bucketize(values, edges, right=True) - 1
+    inside = (values >= edges[0]) & (values <= edges[-1])
+    indices = torch.clamp(indices, min=0, max=bin_count - 1)
+    counts = torch.bincount(indices[inside], minlength=bin_count).to(torch.float64)
+    widths = edges[1:] - edges[:-1]
+    return counts / (torch.clamp_min(counts.sum(), 1.0) * widths)
 
 
 def _timeseries_rows(
