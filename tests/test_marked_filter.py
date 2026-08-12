@@ -6,8 +6,12 @@ import torch
 from ot_micromr.config import load_runspec
 from ot_micromr.marked_filter import (
     MARK_COUNT,
+    _block_reduce,
+    _empirical_probability_tables,
+    _inverse_softplus,
     _marked_interval_score,
     _synthetic_mark_tables,
+    EmpiricalMarkedDay,
     encode_mark,
     magnitude_power_bucket,
     mark_metadata,
@@ -90,6 +94,68 @@ class MarkedFilterTests(unittest.TestCase):
             1.0,
         )
         self.assertTrue(torch.all(torch.isfinite(scores)))
+
+    def test_empirical_tables_have_full_support_and_constrained_drift(self) -> None:
+        delta_bid = torch.tensor((2, -2, 0, 0), dtype=torch.int64)
+        delta_ask = torch.tensor((2, -2, -1, 1), dtype=torch.int64)
+        mark = encode_mark(delta_bid, delta_ask)
+        spread = torch.tensor((0, 0, 2, 1), dtype=torch.int64)
+        train = (
+            torch.zeros(4),
+            spread,
+            mark,
+            torch.ones(4),
+            delta_bid + delta_ask,
+            delta_ask - delta_bid,
+            torch.tensor((1, 1, 3, 2)),
+            torch.tensor((1, 1, 2, 3)),
+        )
+        full = _empirical_probability_tables(train, 0.01, "full")
+        no_tick = _empirical_probability_tables(train, 0.01, "no_multi_tick")
+        no_spread = _empirical_probability_tables(train, 0.01, "no_multi_spread")
+        self.assertTrue(torch.all(full[0] > 0.0))
+        self.assertTrue(torch.allclose(full[0].sum(dim=-1), torch.ones(8)))
+        self.assertLess(float(torch.max(torch.abs(full[5]))), 1e-7)
+        self.assertGreater(float(full[1][0, mark[0]]), 0.0)
+        self.assertEqual(float(no_tick[1][0, mark[0]]), 0.0)
+        self.assertGreater(float(full[1][2, mark[2]]), 0.0)
+        self.assertEqual(float(no_spread[1][2, mark[2]]), 0.0)
+
+    def test_inverse_softplus_is_finite_at_empirical_event_rates(self) -> None:
+        rates = torch.tensor((0.1, 1.0, 20.0, 100.0), dtype=torch.float32)
+        raw = _inverse_softplus(rates)
+        self.assertTrue(torch.all(torch.isfinite(raw)))
+        self.assertTrue(
+            torch.allclose(torch.nn.functional.softplus(raw), rates, rtol=1e-6, atol=1e-6)
+        )
+
+    def test_block_median_is_vectorized_and_even_count_uses_midpoint(self) -> None:
+        day = EmpiricalMarkedDay(
+            date="2024-01-15",
+            timestamps_ms=torch.tensor((0, 1, 2, 1_800_001, 1_800_002)),
+            bid_ticks=torch.zeros(5, dtype=torch.int64),
+            ask_ticks=torch.ones(5, dtype=torch.int64),
+            reset=torch.zeros(5, dtype=torch.bool),
+            dt_seconds=torch.ones(4),
+            valid_interval=torch.ones(4, dtype=torch.bool),
+            previous_spread_ticks=torch.ones(4, dtype=torch.int64),
+            current_spread_ticks=torch.ones(4, dtype=torch.int64),
+            previous_spread_bucket=torch.zeros(4, dtype=torch.int64),
+            mark_id=torch.zeros(4, dtype=torch.int64),
+            delta_y=torch.zeros(4, dtype=torch.int64),
+            delta_d=torch.zeros(4, dtype=torch.int64),
+            prior_mid_price=torch.zeros(4),
+            proxy_price=torch.zeros(5),
+            proxy_gap=torch.zeros(4),
+            spot_reference=None,
+            spot_reference_timestamp_ms=None,
+        )
+        median, count, block = _block_reduce(
+            day, torch.tensor((4.0, 2.0, 10.0, 6.0)), reduction="median", block_minutes=30
+        )
+        self.assertTrue(torch.equal(block, torch.tensor((0, 1))))
+        self.assertTrue(torch.equal(count, torch.tensor((2.0, 2.0), dtype=torch.float64)))
+        self.assertTrue(torch.equal(median, torch.tensor((3.0, 8.0), dtype=torch.float64)))
 
 
 if __name__ == "__main__":

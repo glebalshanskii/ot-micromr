@@ -38,7 +38,10 @@ from ot_micromr.empirical_data import evaluate_empirical_data
 from ot_micromr.empirical_filter import evaluate_empirical_filter
 from ot_micromr.efficient_price import evaluate_synthetic_filter
 from ot_micromr.figure4_experiments import evaluate_figure4
-from ot_micromr.marked_filter import evaluate_marked_synthetic_filter
+from ot_micromr.marked_filter import (
+    evaluate_empirical_marked_filter,
+    evaluate_marked_synthetic_filter,
+)
 from ot_micromr.simulation_experiments import evaluate_simulation
 
 
@@ -493,6 +496,25 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                 ],
             }
         )
+    if spec.experiment_id == "EMP-MARK-FILTER-001":
+        paths_by_class.update(
+            {
+                "metrics_raw": [
+                    run_directory / "metrics" / "block_metrics.csv",
+                    run_directory / "metrics" / "day_state.csv",
+                    run_directory / "metrics" / "dependency_audit.json",
+                    run_directory / "metrics" / "replay.json",
+                    run_directory / "metrics" / "sensitivity.json",
+                    run_directory / "metrics" / "timestamp_audit.json",
+                ],
+                "table": [
+                    run_directory / "tables" / "fold_parameters.csv",
+                    run_directory / "tables" / "mark_diagnostics.csv",
+                    run_directory / "tables" / "inference.csv",
+                ],
+                "state": [run_directory / "state" / "december_filter.pt"],
+            }
+        )
     result: dict[str, bool] = {}
     for artifact_class in spec.values["artifacts"]["required_classes"]:
         if artifact_class == "manifest":
@@ -583,6 +605,8 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_marked_synthetic_filter(spec, run_directory)
         elif spec.experiment_id == "EMP-FILTER-001":
             evaluation = evaluate_empirical_filter(spec, run_directory)
+        elif spec.experiment_id == "EMP-MARK-FILTER-001":
+            evaluation = evaluate_empirical_marked_filter(spec, run_directory)
         else:
             raise ExperimentError(f"experiment runner is not implemented: {spec.experiment_id}")
         metrics = evaluation.metrics
@@ -629,7 +653,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
 
     is_figure4 = spec.experiment_id == "SIM-FIG4-002"
     is_empirical_data = spec.experiment_id == "EMP-DATA-001"
-    is_empirical_filter = spec.experiment_id == "EMP-FILTER-001"
+    is_empirical_filter = spec.experiment_id in {"EMP-FILTER-001", "EMP-MARK-FILTER-001"}
     is_empirical_source = is_empirical_data or is_empirical_filter
     is_filter_synthetic = spec.experiment_id in {"FILTER-SYN-001", "FILTER-MARK-SYN-001"}
     numerics_manifest = (
