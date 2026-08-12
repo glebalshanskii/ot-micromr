@@ -18,7 +18,9 @@
 - **Local PDF:** `docs/papers/2608.00885v1 - Optimal Trading of Microstructure Mean Reversion.pdf`
 - **Local PDF SHA-256:** `fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba`
 - **Local PDF size:** 837713 bytes; локальная копия побайтно совпадает с official v1 PDF
-- **Project status:** paper analysis complete; reproduction planned in `docs/plan.md`
+- **Project status:** analytical reproduction complete; exact-jump figures independently
+  partially reproduced; empirical book-only extension closed negative in P10; see
+  `docs/reports/final-synthesis.md`
 - **Access date:** 2026-08-11
 
 ### Provenance note
