@@ -1,0 +1,131 @@
+schema_version = "runspec-v1"
+experiment_id = "FILTER-MARK-SYN-001"
+track = "synthetic"
+mode = "oracle-diagnostic"
+objective = "Validate a causal marked multi-spread particle filter with known X used only after filtering."
+claim_ids = ["P6M-SYN-STATE-RECOVERY", "P6M-SYN-PREDICTIVE-SCORE", "P6M-SYN-CALIBRATION"]
+orders_enabled = false
+claim_eligible = false
+
+[seed_policy]
+rng_used = true
+rng_algorithm = "torch.Generator:CUDA"
+seeds = [202608120300]
+mapping = "One CUDA master seed; market, particle transition and systematic-resampling streams use fixed offsets 0, 1 and 2 and are replayed exactly."
+
+[units]
+time = "second"
+price = "synthetic_price_unit"
+quantity = "lot"
+cash = "synthetic_quote_currency"
+timezone = "UTC"
+normalization = "session_relative_state_error_and_nat_per_marked_event"
+
+[numerics]
+compute_backend = "torch"
+compute_device = "cuda"
+state_dtype = "float32"
+statistics_dtype = "float64"
+compile_enabled = true
+compile_mode = "reduce-overhead"
+chunk_steps = 100
+particle_count = 256
+resampling = "systematic_every_fixed_chunk"
+resampling_interval_steps = 100
+nonfinite_policy = "stop"
+
+[inputs]
+source_kind = "project_chosen_marked_model"
+paper_version = "arXiv:2608.00885v1"
+paper_pdf_sha256 = "fd1a0dfc0d8fc8d7feb26ee23231232ac4263e95a5bb0ef41d18e4c0a8c611ba"
+protocol_path = "docs/protocols/empirical/p6m-marked-multi-spread.md"
+base_experiment_id = "FILTER-SYN-001"
+oracle_kind = "known_synthetic_efficient_price"
+future_access = "oracle_used_only_after_filtering_for_metrics"
+dataset = "not_applicable"
+dataset_reason = "Synthetic marked point-process identification experiment."
+
+[model]
+enabled = true
+delta_price = 1.0
+sigma_x_price_per_sqrt_second = 1.0
+alpha_per_second = 1.0
+spread_state_count = 4
+baseline_rates_per_second = [8.0, 10.0, 12.0, 14.0]
+translation_tick_sizes = [1, 2, 4]
+translation_weights = [0.60, 0.25, 0.10]
+widening_weight = 0.08
+narrowing_weight_per_tick = 0.12
+maximum_spread_change_ticks = 2
+particle_initial_standard_deviation_price = 1.0
+initial_mid_half_ticks = 1
+initial_spread_ticks = 1
+initial_efficient_price = 0.5
+mark_contract = "fixed_729_bucket_v1"
+corrective_constraint = "unit_directional_first_moment"
+
+[simulation]
+enabled = true
+time_step_seconds = 0.0025
+burn_in_seconds = 30.0
+horizon_seconds = 60.0
+session_count = 64
+maximum_events_per_step = 1
+event_occurrence_probability = "1 - exp(-lambda_total_left * dt)"
+
+[strategy]
+enabled = false
+reason = "P6M estimates latent state and cannot generate thresholds, orders or P&L."
+
+[execution]
+enabled = false
+reason = "No fills, costs or latency are evaluated in P6M."
+
+[evaluation]
+primary_family_id = "P6M-SYN-PRIMARY-001"
+familywise_alpha = 0.05
+multiplicity_method = "bonferroni_two_metrics"
+per_metric_alpha = 0.025
+power_target = 0.90
+state_metric = "one_minus_pf_rmse_over_current_mid_rmse"
+state_minimum_effect = 0.10
+state_planning_alternative = 0.20
+state_planning_session_standard_deviation = 0.20
+log_score_metric = "pf_minus_current_mid_predictive_log_score_nat_per_marked_event"
+log_score_minimum_effect_nat_per_event = 0.01
+log_score_planning_alternative_nat_per_event = 0.03
+log_score_planning_session_standard_deviation = 0.04
+planned_minimum_sessions = 43
+planned_sessions = 64
+calibration_family_id = "P6M-SYN-CALIBRATION-001"
+posterior_interval_nominal_coverage = 0.90
+posterior_coverage_equivalence_margin = 0.05
+calibration_alpha = 0.05
+baseline_drift_absolute_error_max = 0.000001
+corrective_moment_absolute_error_max = 0.000001
+maximum_event_probability = 0.10
+maximum_wall_seconds = 300.0
+
+[acceptance]
+require_state_superiority = true
+require_log_score_superiority = true
+require_calibration_equivalence = true
+require_mark_arithmetic = true
+require_positive_spread = true
+require_drift_constraint = true
+require_deterministic_replay = true
+require_clean_tree_for_claim = true
+stop_on_nonfinite_value = true
+
+[artifacts]
+output_root = "outputs"
+required_classes = [
+  "source_config",
+  "resolved_runspec",
+  "manifest",
+  "log",
+  "metrics_summary",
+  "metrics_raw",
+  "table",
+]
+optional_classes = []

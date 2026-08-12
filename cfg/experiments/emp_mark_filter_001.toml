@@ -1,0 +1,149 @@
+schema_version = "runspec-v1"
+experiment_id = "EMP-MARK-FILTER-001"
+track = "empirical"
+mode = "practical-local"
+objective = "Evaluate a causal marked multi-spread OKX BTC filter in frozen rolling-origin folds without orders or P&L."
+claim_ids = ["P6M-EMP-PROPER-SCORE", "P6M-EMP-CALIBRATION", "P6M-EMP-UNCERTAINTY-MARGIN"]
+orders_enabled = false
+claim_eligible = true
+
+[seed_policy]
+rng_used = true
+rng_algorithm = "torch.Generator:CUDA"
+seeds = [202608120400]
+mapping = "Fold and model particle initialization, transition and systematic-resampling streams use deterministic offsets from one CUDA master seed; replay repeats the December full-model path."
+
+[units]
+time = "millisecond"
+price = "USDT"
+quantity = "contract_or_base_asset_by_instrument"
+cash = "USDT"
+timezone = "UTC"
+normalization = "nat_per_scored_marked_event_and_30_minute_block"
+
+[numerics]
+compute_backend = "torch"
+compute_device = "cuda"
+state_dtype = "float32"
+statistics_dtype = "float64"
+compile_enabled = true
+compile_mode = "reduce-overhead"
+particle_count = 256
+particle_chunk_events = 128
+fit_batch_events = 262144
+optimizer = "Adam"
+optimizer_steps = 300
+optimizer_learning_rate = 0.05
+nonfinite_policy = "stop"
+
+[inputs]
+source_kind = "verified_p6_processed_bbo_dependency"
+venue = "OKX"
+dataset = "okx-btc-p5-audit-2024-v1"
+dataset_version = "v1"
+dataset_sha256 = "0e3a6d6e99586b72ccc237bde7f8df4c3651ba4bd4495b391d9a20771c0e3888"
+raw_manifest_path = "data/okx/emp_data_001/raw_manifest.json"
+source_spec_path = "cfg/experiments/emp_data_001_sources.toml"
+source_spec_sha256 = "16036c12ff5813c41f2ebd574b72f06d99ee093a3f78f447e0b1ba9b18426d45"
+protocol_path = "docs/protocols/empirical/p6m-marked-multi-spread.md"
+execution_instrument = "BTC-USDT-SWAP"
+reference_instrument = "BTC-USDT"
+p6_dependency_run = "EMP-FILTER-001/20260812T000514761846Z-7075bc32601b-det"
+p6_dependency_manifest_sha256 = "b7c639e49ca49bbb542485341eedb5071b8e515d7d9f061c5aeb7fafed536bc5"
+p6_dependency_state_manifest_sha256 = "df2b9bcf0e087200b9f250a16ac59db2df3462317265b1e688c226ef967e589b"
+synthetic_dependency_config_path = "cfg/experiments/filter_mark_syn_001.toml"
+synthetic_dependency_config_sha256 = "6bc9e58e2898f44212b0603f0b39f7f6368333754395f7d9d095400d3af6d98c"
+synthetic_dependency_policy = "first_passed_run_matching_config_sha256"
+data_access = "existing_p5_p6_research_days_only_no_pnl"
+
+[model]
+enabled = true
+price_tick = 0.1
+mark_contract = "fixed_729_bucket_v1"
+previous_spread_exact_bucket_max = 7
+magnitude_power_bucket_max = 7
+dirichlet_smoothing_beta = 0.01
+gap_proxy = "causal_irregular_mid_ewma"
+gap_proxy_time_constant_seconds = 300.0
+fit_models = ["residual", "no_multi_tick", "no_multi_spread", "full", "unconstrained"]
+positive_parameterization = "softplus"
+corrective_constraint = "unit_directional_first_moment"
+particle_initial_scale = "fold_train_s_g"
+spot_role = "causal_diagnostic_reference_only"
+
+[simulation]
+enabled = false
+reason = "Empirical marks reuse verified P6 processed OKX BBO tensors."
+
+[strategy]
+enabled = false
+reason = "P6M estimates latent state and cannot generate thresholds, orders or P&L."
+
+[execution]
+enabled = false
+reason = "No fills, costs or latency are evaluated in P6M."
+
+[evaluation]
+ordered_dates = [
+  "2024-01-15", "2024-03-15", "2024-05-15", "2024-07-15",
+  "2024-09-15", "2024-11-15", "2024-12-15",
+]
+spot_dates = ["2024-01-15", "2024-07-15", "2024-12-15"]
+rolling_origin_minimum_train_days = 1
+block_minutes = 30
+planned_blocks = 288
+minimum_valid_blocks = 117
+primary_family_id = "P6M-EMP-USABILITY-001"
+familywise_alpha = 0.05
+multiplicity_method = "bonferroni_two_metrics"
+per_metric_alpha = 0.025
+power_target = 0.90
+log_score_minimum_effect_nat_per_event = 0.01
+log_score_planning_alternative_nat_per_event = 0.04
+log_score_planning_block_standard_deviation = 0.10
+uncertainty_margin_metric_minimum = 0.0
+uncertainty_planning_alternative = 0.25
+uncertainty_planning_block_standard_deviation = 0.50
+calibration_family_id = "P6M-EMP-CALIBRATION-001"
+calibration_per_metric_alpha = 0.025
+rescaling_mean_target = 1.0
+rescaling_mean_equivalence_margin = 0.10
+rescaling_standard_deviation_target = 1.0
+rescaling_standard_deviation_equivalence_margin = 0.20
+constrained_noninferiority_margin_nat_per_event = 0.005
+constrained_noninferiority_alpha = 0.05
+component_family_alpha = 0.05
+component_multiplicity_method = "holm_two_components"
+require_positive_sensitivity_without_december = true
+posterior_interval_nominal_coverage = 0.90
+maximum_wall_seconds = 600.0
+
+[acceptance]
+require_synthetic_dependency_passed = true
+require_dependency_hashes = true
+require_full_healthy_transition_support = true
+require_zero_future_timestamp_accesses = true
+require_deterministic_replay = true
+require_all_filter_values_finite = true
+require_positive_posterior_variance = true
+require_frozen_fold_parameters = true
+require_primary_usability_family = true
+require_calibration_equivalence = true
+require_constrained_noninferiority = true
+require_december_exclusion_sensitivity = true
+require_clean_tree_for_claim = true
+stop_on_nonfinite_value = true
+
+[artifacts]
+output_root = "outputs"
+required_classes = [
+  "source_config",
+  "resolved_runspec",
+  "manifest",
+  "log",
+  "metrics_summary",
+  "metrics_raw",
+  "table",
+  "state",
+]
+optional_classes = []

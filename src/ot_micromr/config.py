@@ -42,14 +42,23 @@ SIMULATION_EXPERIMENTS = BALANCED_SIMULATION_EXPERIMENTS | UNBALANCED_SIMULATION
 FIGURE4_EXPERIMENTS = {"SIM-FIG4-002"}
 EMPIRICAL_DATA_EXPERIMENTS = {"EMP-DATA-001"}
 EMPIRICAL_FILTER_EXPERIMENTS = {"EMP-FILTER-001"}
-EMPIRICAL_EXPERIMENTS = EMPIRICAL_DATA_EXPERIMENTS | EMPIRICAL_FILTER_EXPERIMENTS
+EMPIRICAL_MARK_FILTER_EXPERIMENTS = {"EMP-MARK-FILTER-001", "EMP-MARK-CT-001"}
+EMPIRICAL_EXPERIMENTS = (
+    EMPIRICAL_DATA_EXPERIMENTS
+    | EMPIRICAL_FILTER_EXPERIMENTS
+    | EMPIRICAL_MARK_FILTER_EXPERIMENTS
+)
 FILTER_SYNTHETIC_EXPERIMENTS = {"FILTER-SYN-001"}
+MARK_FILTER_SYNTHETIC_EXPERIMENTS = {"FILTER-MARK-SYN-001"}
+ALL_FILTER_SYNTHETIC_EXPERIMENTS = (
+    FILTER_SYNTHETIC_EXPERIMENTS | MARK_FILTER_SYNTHETIC_EXPERIMENTS
+)
 SUPPORTED_EXPERIMENTS = (
     ANALYTICAL_EXPERIMENTS
     | SIMULATION_EXPERIMENTS
     | FIGURE4_EXPERIMENTS
     | EMPIRICAL_EXPERIMENTS
-    | FILTER_SYNTHETIC_EXPERIMENTS
+    | ALL_FILTER_SYNTHETIC_EXPERIMENTS
 )
 
 
@@ -199,10 +208,10 @@ def _validate_common(data: Mapping[str, Any]) -> None:
             raise ConfigError(
                 "RunSpec track/mode: empirical experiments require empirical/practical-local"
             )
-    elif experiment_id in FILTER_SYNTHETIC_EXPERIMENTS:
+    elif experiment_id in ALL_FILTER_SYNTHETIC_EXPERIMENTS:
         if track != "synthetic" or mode != "oracle-diagnostic":
             raise ConfigError(
-                "RunSpec track/mode: FILTER-SYN-001 requires synthetic/oracle-diagnostic"
+                "RunSpec track/mode: filter diagnostics require synthetic/oracle-diagnostic"
             )
     elif track != "synthetic" or mode != "paper-faithful":
         raise ConfigError(
@@ -219,12 +228,18 @@ def _validate_common(data: Mapping[str, Any]) -> None:
     if experiment_id in FILTER_SYNTHETIC_EXPERIMENTS:
         _validate_filter_synthetic(data)
         return
+    if experiment_id in MARK_FILTER_SYNTHETIC_EXPERIMENTS:
+        _validate_mark_filter_synthetic(data)
+        return
 
     if experiment_id in EMPIRICAL_DATA_EXPERIMENTS:
         _validate_empirical_common(data)
         return
     if experiment_id in EMPIRICAL_FILTER_EXPERIMENTS:
         _validate_empirical_filter(data)
+        return
+    if experiment_id in EMPIRICAL_MARK_FILTER_EXPERIMENTS:
+        _validate_empirical_mark_filter(data, experiment_id)
         return
     if experiment_id in FIGURE4_EXPERIMENTS:
         return
@@ -1684,6 +1699,271 @@ def _validate_filter_synthetic(data: Mapping[str, Any]) -> None:
         raise ConfigError("RunSpec.artifacts.optional_classes: expected empty array")
 
 
+def _validate_mark_filter_synthetic(data: Mapping[str, Any]) -> None:
+    if _boolean(data, "claim_eligible", "RunSpec"):
+        raise ConfigError("RunSpec.claim_eligible: oracle-diagnostic requires false")
+
+    seed = _table(data, "seed_policy")
+    _expect_keys(seed, {"rng_used", "rng_algorithm", "seeds", "mapping"}, "RunSpec.seed_policy")
+    if not _boolean(seed, "rng_used", "RunSpec.seed_policy"):
+        raise ConfigError("RunSpec.seed_policy.rng_used: expected true")
+    if _string(seed, "rng_algorithm", "RunSpec.seed_policy") != "torch.Generator:CUDA":
+        raise ConfigError("RunSpec.seed_policy.rng_algorithm: expected torch.Generator:CUDA")
+    seeds = seed.get("seeds")
+    if (
+        not isinstance(seeds, list)
+        or len(seeds) != 1
+        or isinstance(seeds[0], bool)
+        or not isinstance(seeds[0], int)
+        or seeds[0] <= 0
+    ):
+        raise ConfigError("RunSpec.seed_policy.seeds: expected one positive master seed")
+    _string(seed, "mapping", "RunSpec.seed_policy")
+
+    units = _table(data, "units")
+    expected_units = {
+        "time": "second",
+        "price": "synthetic_price_unit",
+        "quantity": "lot",
+        "cash": "synthetic_quote_currency",
+        "timezone": "UTC",
+        "normalization": "session_relative_state_error_and_nat_per_marked_event",
+    }
+    _expect_keys(units, set(expected_units), "RunSpec.units")
+    for key, expected in expected_units.items():
+        if _string(units, key, "RunSpec.units") != expected:
+            raise ConfigError(f"RunSpec.units.{key}: expected {expected!r}")
+
+    numerics = _table(data, "numerics")
+    numeric_keys = {"chunk_steps", "particle_count", "resampling_interval_steps"}
+    string_keys = {
+        "compute_backend",
+        "compute_device",
+        "state_dtype",
+        "statistics_dtype",
+        "compile_mode",
+        "resampling",
+        "nonfinite_policy",
+    }
+    _expect_keys(numerics, numeric_keys | string_keys | {"compile_enabled"}, "RunSpec.numerics")
+    expected_numerics = {
+        "compute_backend": "torch",
+        "compute_device": "cuda",
+        "state_dtype": "float32",
+        "statistics_dtype": "float64",
+        "compile_mode": "reduce-overhead",
+        "resampling": "systematic_every_fixed_chunk",
+        "nonfinite_policy": "stop",
+    }
+    for key, expected in expected_numerics.items():
+        if _string(numerics, key, "RunSpec.numerics") != expected:
+            raise ConfigError(f"RunSpec.numerics.{key}: expected {expected!r}")
+    if not _boolean(numerics, "compile_enabled", "RunSpec.numerics"):
+        raise ConfigError("RunSpec.numerics.compile_enabled: expected true")
+    chunk_steps = _integer(numerics, "chunk_steps", "RunSpec.numerics", positive=True)
+    _integer(numerics, "particle_count", "RunSpec.numerics", positive=True)
+    if _integer(
+        numerics, "resampling_interval_steps", "RunSpec.numerics", positive=True
+    ) != chunk_steps:
+        raise ConfigError("RunSpec.numerics: resampling interval must equal chunk size")
+
+    inputs = _table(data, "inputs")
+    input_keys = {
+        "source_kind",
+        "paper_version",
+        "paper_pdf_sha256",
+        "protocol_path",
+        "base_experiment_id",
+        "oracle_kind",
+        "future_access",
+        "dataset",
+        "dataset_reason",
+    }
+    _expect_keys(inputs, input_keys, "RunSpec.inputs")
+    expected_inputs = {
+        "source_kind": "project_chosen_marked_model",
+        "paper_version": "arXiv:2608.00885v1",
+        "base_experiment_id": "FILTER-SYN-001",
+        "oracle_kind": "known_synthetic_efficient_price",
+        "future_access": "oracle_used_only_after_filtering_for_metrics",
+        "dataset": "not_applicable",
+    }
+    for key, expected in expected_inputs.items():
+        if _string(inputs, key, "RunSpec.inputs") != expected:
+            raise ConfigError(f"RunSpec.inputs.{key}: expected {expected!r}")
+    for key in ("protocol_path", "dataset_reason"):
+        _string(inputs, key, "RunSpec.inputs")
+    paper_hash = _string(inputs, "paper_pdf_sha256", "RunSpec.inputs")
+    if len(paper_hash) != 64 or any(char not in "0123456789abcdef" for char in paper_hash):
+        raise ConfigError("RunSpec.inputs.paper_pdf_sha256: expected lowercase SHA-256")
+
+    model = _table(data, "model")
+    model_keys = {
+        "enabled",
+        "delta_price",
+        "sigma_x_price_per_sqrt_second",
+        "alpha_per_second",
+        "spread_state_count",
+        "baseline_rates_per_second",
+        "translation_tick_sizes",
+        "translation_weights",
+        "widening_weight",
+        "narrowing_weight_per_tick",
+        "maximum_spread_change_ticks",
+        "particle_initial_standard_deviation_price",
+        "initial_mid_half_ticks",
+        "initial_spread_ticks",
+        "initial_efficient_price",
+        "mark_contract",
+        "corrective_constraint",
+    }
+    _expect_keys(model, model_keys, "RunSpec.model")
+    if not _boolean(model, "enabled", "RunSpec.model"):
+        raise ConfigError("RunSpec.model.enabled: expected true")
+    for key in (
+        "delta_price",
+        "sigma_x_price_per_sqrt_second",
+        "alpha_per_second",
+        "widening_weight",
+        "narrowing_weight_per_tick",
+        "particle_initial_standard_deviation_price",
+    ):
+        _number(model, key, "RunSpec.model", positive=True)
+    spread_count = _integer(model, "spread_state_count", "RunSpec.model", positive=True)
+    if spread_count < 3:
+        raise ConfigError("RunSpec.model.spread_state_count: expected at least three")
+    rates = _number_sequence(model, "baseline_rates_per_second", "RunSpec.model")
+    if len(rates) != spread_count or any(value <= 0.0 for value in rates):
+        raise ConfigError("RunSpec.model.baseline_rates_per_second: unexpected shape/value")
+    sizes = model.get("translation_tick_sizes")
+    if not isinstance(sizes, list) or not sizes or any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in sizes
+    ):
+        raise ConfigError("RunSpec.model.translation_tick_sizes: expected positive integer array")
+    weights = _number_sequence(model, "translation_weights", "RunSpec.model")
+    if len(weights) != len(sizes) or any(value <= 0.0 for value in weights):
+        raise ConfigError("RunSpec.model.translation_weights: unexpected shape/value")
+    _integer(model, "maximum_spread_change_ticks", "RunSpec.model", positive=True)
+    _integer(model, "initial_mid_half_ticks", "RunSpec.model")
+    initial_spread = _integer(model, "initial_spread_ticks", "RunSpec.model", positive=True)
+    if initial_spread > spread_count:
+        raise ConfigError("RunSpec.model.initial_spread_ticks: exceeds state count")
+    _number(model, "initial_efficient_price", "RunSpec.model")
+    if _string(model, "mark_contract", "RunSpec.model") != "fixed_729_bucket_v1":
+        raise ConfigError("RunSpec.model.mark_contract: unexpected contract")
+    if _string(model, "corrective_constraint", "RunSpec.model") != "unit_directional_first_moment":
+        raise ConfigError("RunSpec.model.corrective_constraint: unexpected constraint")
+
+    simulation = _table(data, "simulation")
+    simulation_keys = {
+        "enabled",
+        "time_step_seconds",
+        "burn_in_seconds",
+        "horizon_seconds",
+        "session_count",
+        "maximum_events_per_step",
+        "event_occurrence_probability",
+    }
+    _expect_keys(simulation, simulation_keys, "RunSpec.simulation")
+    if not _boolean(simulation, "enabled", "RunSpec.simulation"):
+        raise ConfigError("RunSpec.simulation.enabled: expected true")
+    dt = _number(simulation, "time_step_seconds", "RunSpec.simulation", positive=True)
+    burn = _number(simulation, "burn_in_seconds", "RunSpec.simulation", positive=True)
+    horizon = _number(simulation, "horizon_seconds", "RunSpec.simulation", positive=True)
+    sessions = _integer(simulation, "session_count", "RunSpec.simulation", positive=True)
+    if sessions != 64:
+        raise ConfigError("RunSpec.simulation.session_count: expected 64")
+    if _integer(simulation, "maximum_events_per_step", "RunSpec.simulation") != 1:
+        raise ConfigError("RunSpec.simulation.maximum_events_per_step: expected one")
+    _string(simulation, "event_occurrence_probability", "RunSpec.simulation")
+    total_steps = (burn + horizon) / dt
+    if not math.isclose(total_steps, round(total_steps), rel_tol=0.0, abs_tol=1e-9):
+        raise ConfigError("RunSpec.simulation: duration must be an integer number of steps")
+    if round(total_steps) % chunk_steps != 0:
+        raise ConfigError("RunSpec.simulation: total steps must be divisible by chunk_steps")
+
+    for section in ("strategy", "execution"):
+        table = _table(data, section)
+        _expect_keys(table, {"enabled", "reason"}, f"RunSpec.{section}")
+        if _boolean(table, "enabled", f"RunSpec.{section}"):
+            raise ConfigError(f"RunSpec.{section}.enabled: FILTER-MARK-SYN-001 requires false")
+        _string(table, "reason", f"RunSpec.{section}")
+
+    evaluation = _table(data, "evaluation")
+    evaluation_keys = {
+        "primary_family_id",
+        "familywise_alpha",
+        "multiplicity_method",
+        "per_metric_alpha",
+        "power_target",
+        "state_metric",
+        "state_minimum_effect",
+        "state_planning_alternative",
+        "state_planning_session_standard_deviation",
+        "log_score_metric",
+        "log_score_minimum_effect_nat_per_event",
+        "log_score_planning_alternative_nat_per_event",
+        "log_score_planning_session_standard_deviation",
+        "planned_minimum_sessions",
+        "planned_sessions",
+        "calibration_family_id",
+        "posterior_interval_nominal_coverage",
+        "posterior_coverage_equivalence_margin",
+        "calibration_alpha",
+        "baseline_drift_absolute_error_max",
+        "corrective_moment_absolute_error_max",
+        "maximum_event_probability",
+        "maximum_wall_seconds",
+    }
+    _expect_keys(evaluation, evaluation_keys, "RunSpec.evaluation")
+    string_evaluation = {
+        "primary_family_id",
+        "multiplicity_method",
+        "state_metric",
+        "log_score_metric",
+        "calibration_family_id",
+    }
+    for key in string_evaluation:
+        _string(evaluation, key, "RunSpec.evaluation")
+    for key in evaluation_keys - string_evaluation - {"planned_minimum_sessions", "planned_sessions"}:
+        _number(evaluation, key, "RunSpec.evaluation", positive=True)
+    if _integer(evaluation, "planned_minimum_sessions", "RunSpec.evaluation", positive=True) != 43:
+        raise ConfigError("RunSpec.evaluation.planned_minimum_sessions: expected 43")
+    if _integer(evaluation, "planned_sessions", "RunSpec.evaluation", positive=True) != sessions:
+        raise ConfigError("RunSpec.evaluation.planned_sessions: disagrees with sessions")
+
+    acceptance = _table(data, "acceptance")
+    acceptance_keys = {
+        "require_state_superiority",
+        "require_log_score_superiority",
+        "require_calibration_equivalence",
+        "require_mark_arithmetic",
+        "require_positive_spread",
+        "require_drift_constraint",
+        "require_deterministic_replay",
+        "require_clean_tree_for_claim",
+        "stop_on_nonfinite_value",
+    }
+    _expect_keys(acceptance, acceptance_keys, "RunSpec.acceptance")
+    for key in acceptance_keys:
+        if not _boolean(acceptance, key, "RunSpec.acceptance"):
+            raise ConfigError(f"RunSpec.acceptance.{key}: expected true")
+
+    artifacts = _table(data, "artifacts")
+    _expect_keys(artifacts, {"output_root", "required_classes", "optional_classes"}, "RunSpec.artifacts")
+    if _string(artifacts, "output_root", "RunSpec.artifacts") != "outputs":
+        raise ConfigError("RunSpec.artifacts.output_root: expected outputs")
+    required = set(_string_sequence(artifacts, "required_classes", "RunSpec.artifacts"))
+    if required != {
+        "source_config", "resolved_runspec", "manifest", "log", "metrics_summary",
+        "metrics_raw", "table",
+    }:
+        raise ConfigError("RunSpec.artifacts.required_classes: unexpected FILTER-MARK-SYN-001 contract")
+    optional = artifacts.get("optional_classes")
+    if not isinstance(optional, list) or optional:
+        raise ConfigError("RunSpec.artifacts.optional_classes: expected empty array")
+
+
 def _validate_empirical_filter(data: Mapping[str, Any]) -> None:
     seed = _table(data, "seed_policy")
     _expect_keys(seed, {"rng_used", "rng_algorithm", "seeds", "mapping"}, "RunSpec.seed_policy")
@@ -1932,6 +2212,268 @@ def _validate_empirical_filter(data: Mapping[str, Any]) -> None:
         "state",
     }:
         raise ConfigError("RunSpec.artifacts.required_classes: unexpected EMP-FILTER-001 contract")
+    optional = artifacts.get("optional_classes")
+    if not isinstance(optional, list) or optional:
+        raise ConfigError("RunSpec.artifacts.optional_classes: expected empty array")
+
+
+def _validate_empirical_mark_filter(data: Mapping[str, Any], experiment_id: str) -> None:
+    if not _boolean(data, "claim_eligible", "RunSpec"):
+        raise ConfigError(f"RunSpec.claim_eligible: {experiment_id} requires true")
+    continuous = experiment_id == "EMP-MARK-CT-001"
+
+    seed = _table(data, "seed_policy")
+    _expect_keys(seed, {"rng_used", "rng_algorithm", "seeds", "mapping"}, "RunSpec.seed_policy")
+    if not _boolean(seed, "rng_used", "RunSpec.seed_policy"):
+        raise ConfigError("RunSpec.seed_policy.rng_used: expected true")
+    if _string(seed, "rng_algorithm", "RunSpec.seed_policy") != "torch.Generator:CUDA":
+        raise ConfigError("RunSpec.seed_policy.rng_algorithm: expected torch.Generator:CUDA")
+    seeds = seed.get("seeds")
+    if (
+        not isinstance(seeds, list)
+        or len(seeds) != 1
+        or isinstance(seeds[0], bool)
+        or not isinstance(seeds[0], int)
+        or seeds[0] <= 0
+    ):
+        raise ConfigError("RunSpec.seed_policy.seeds: expected one positive master seed")
+    _string(seed, "mapping", "RunSpec.seed_policy")
+
+    units = _table(data, "units")
+    expected_units = {
+        "time": "millisecond",
+        "price": "USDT",
+        "quantity": "contract_or_base_asset_by_instrument",
+        "cash": "USDT",
+        "timezone": "UTC",
+        "normalization": "nat_per_scored_marked_event_and_30_minute_block",
+    }
+    _expect_keys(units, set(expected_units), "RunSpec.units")
+    for key, expected in expected_units.items():
+        if _string(units, key, "RunSpec.units") != expected:
+            raise ConfigError(f"RunSpec.units.{key}: expected {expected!r}")
+
+    numerics = _table(data, "numerics")
+    numeric_keys = {
+        "particle_count", "particle_chunk_events", "fit_batch_events", "optimizer_steps",
+        "optimizer_learning_rate",
+    }
+    string_keys = {
+        "compute_backend", "compute_device", "state_dtype", "statistics_dtype",
+        "compile_mode", "optimizer", "nonfinite_policy",
+    }
+    if continuous:
+        numeric_keys |= {
+            "hazard_primary_substeps",
+            "hazard_refinement_substeps",
+            "hazard_random_substeps",
+        }
+        string_keys |= {"hazard_integration", "event_intensity_phase"}
+    _expect_keys(numerics, numeric_keys | string_keys | {"compile_enabled"}, "RunSpec.numerics")
+    expected_numerics = {
+        "compute_backend": "torch",
+        "compute_device": "cuda",
+        "state_dtype": "float32",
+        "statistics_dtype": "float64",
+        "compile_mode": "reduce-overhead",
+        "optimizer": "Adam",
+        "nonfinite_policy": "stop",
+    }
+    for key, expected in expected_numerics.items():
+        if _string(numerics, key, "RunSpec.numerics") != expected:
+            raise ConfigError(f"RunSpec.numerics.{key}: expected {expected!r}")
+    if not _boolean(numerics, "compile_enabled", "RunSpec.numerics"):
+        raise ConfigError("RunSpec.numerics.compile_enabled: expected true")
+    for key in ("particle_count", "particle_chunk_events", "fit_batch_events", "optimizer_steps"):
+        _integer(numerics, key, "RunSpec.numerics", positive=True)
+    _number(numerics, "optimizer_learning_rate", "RunSpec.numerics", positive=True)
+    if continuous:
+        if _string(numerics, "hazard_integration", "RunSpec.numerics") != "brownian_path_trapezoid_v1":
+            raise ConfigError("RunSpec.numerics.hazard_integration: unexpected contract")
+        if _string(numerics, "event_intensity_phase", "RunSpec.numerics") != "pre_event_endpoint":
+            raise ConfigError("RunSpec.numerics.event_intensity_phase: expected pre_event_endpoint")
+        primary = _integer(numerics, "hazard_primary_substeps", "RunSpec.numerics", positive=True)
+        refinement = _integer(
+            numerics, "hazard_refinement_substeps", "RunSpec.numerics", positive=True
+        )
+        random_substeps = _integer(
+            numerics, "hazard_random_substeps", "RunSpec.numerics", positive=True
+        )
+        if primary != 4 or refinement != 8 or random_substeps != refinement:
+            raise ConfigError(
+                "RunSpec.numerics: EMP-MARK-CT-001 requires primary/refinement/random "
+                "substeps 4/8/8"
+            )
+
+    inputs = _table(data, "inputs")
+    input_keys = {
+        "source_kind", "venue", "dataset", "dataset_version", "dataset_sha256",
+        "raw_manifest_path", "source_spec_path", "source_spec_sha256", "protocol_path",
+        "execution_instrument", "reference_instrument", "p6_dependency_run",
+        "p6_dependency_manifest_sha256", "p6_dependency_state_manifest_sha256",
+        "synthetic_dependency_config_path", "synthetic_dependency_config_sha256",
+        "synthetic_dependency_policy", "data_access",
+    }
+    _expect_keys(inputs, input_keys, "RunSpec.inputs")
+    expected_inputs = {
+        "source_kind": "verified_p6_processed_bbo_dependency",
+        "venue": "OKX",
+        "dataset_version": "v1",
+        "execution_instrument": "BTC-USDT-SWAP",
+        "reference_instrument": "BTC-USDT",
+        "synthetic_dependency_policy": "first_passed_run_matching_config_sha256",
+        "data_access": "existing_p5_p6_research_days_only_no_pnl",
+    }
+    for key, expected in expected_inputs.items():
+        if _string(inputs, key, "RunSpec.inputs") != expected:
+            raise ConfigError(f"RunSpec.inputs.{key}: expected {expected!r}")
+    digest_keys = {
+        "dataset_sha256", "source_spec_sha256", "p6_dependency_manifest_sha256",
+        "p6_dependency_state_manifest_sha256", "synthetic_dependency_config_sha256",
+    }
+    for key in input_keys - set(expected_inputs) - digest_keys:
+        _string(inputs, key, "RunSpec.inputs")
+    for key in digest_keys:
+        digest = _string(inputs, key, "RunSpec.inputs")
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            raise ConfigError(f"RunSpec.inputs.{key}: expected lowercase SHA-256")
+
+    model = _table(data, "model")
+    model_keys = {
+        "enabled", "price_tick", "mark_contract", "previous_spread_exact_bucket_max",
+        "magnitude_power_bucket_max", "dirichlet_smoothing_beta", "gap_proxy",
+        "gap_proxy_time_constant_seconds", "fit_models", "positive_parameterization",
+        "corrective_constraint", "particle_initial_scale", "spot_role",
+    }
+    _expect_keys(model, model_keys, "RunSpec.model")
+    if not _boolean(model, "enabled", "RunSpec.model"):
+        raise ConfigError("RunSpec.model.enabled: expected true")
+    if _number(model, "price_tick", "RunSpec.model", positive=True) != 0.1:
+        raise ConfigError("RunSpec.model.price_tick: expected 0.1")
+    _integer(model, "previous_spread_exact_bucket_max", "RunSpec.model", positive=True)
+    _integer(model, "magnitude_power_bucket_max", "RunSpec.model", positive=True)
+    _number(model, "dirichlet_smoothing_beta", "RunSpec.model", positive=True)
+    _number(model, "gap_proxy_time_constant_seconds", "RunSpec.model", positive=True)
+    expected_models = (
+        "residual", "no_multi_tick", "no_multi_spread", "full", "unconstrained"
+    )
+    if _string_sequence(model, "fit_models", "RunSpec.model") != expected_models:
+        raise ConfigError("RunSpec.model.fit_models: unexpected model sequence")
+    expected_model_strings = {
+        "mark_contract": "fixed_729_bucket_v1",
+        "gap_proxy": "causal_irregular_mid_ewma",
+        "positive_parameterization": "softplus",
+        "corrective_constraint": "unit_directional_first_moment",
+        "particle_initial_scale": "fold_train_s_g",
+        "spot_role": "causal_diagnostic_reference_only",
+    }
+    for key, expected in expected_model_strings.items():
+        if _string(model, key, "RunSpec.model") != expected:
+            raise ConfigError(f"RunSpec.model.{key}: expected {expected!r}")
+
+    simulation = _table(data, "simulation")
+    _expect_keys(simulation, {"enabled", "reason"}, "RunSpec.simulation")
+    if _boolean(simulation, "enabled", "RunSpec.simulation"):
+        raise ConfigError("RunSpec.simulation.enabled: expected false")
+    _string(simulation, "reason", "RunSpec.simulation")
+    for section in ("strategy", "execution"):
+        table = _table(data, section)
+        _expect_keys(table, {"enabled", "reason"}, f"RunSpec.{section}")
+        if _boolean(table, "enabled", f"RunSpec.{section}"):
+            raise ConfigError(f"RunSpec.{section}.enabled: {experiment_id} requires false")
+        _string(table, "reason", f"RunSpec.{section}")
+
+    evaluation = _table(data, "evaluation")
+    evaluation_keys = {
+        "ordered_dates", "spot_dates", "rolling_origin_minimum_train_days",
+        "block_minutes", "planned_blocks", "minimum_valid_blocks", "primary_family_id",
+        "familywise_alpha", "multiplicity_method", "per_metric_alpha", "power_target",
+        "log_score_minimum_effect_nat_per_event",
+        "log_score_planning_alternative_nat_per_event",
+        "log_score_planning_block_standard_deviation", "uncertainty_margin_metric_minimum",
+        "uncertainty_planning_alternative", "uncertainty_planning_block_standard_deviation",
+        "calibration_family_id", "calibration_per_metric_alpha", "rescaling_mean_target",
+        "rescaling_mean_equivalence_margin", "rescaling_standard_deviation_target",
+        "rescaling_standard_deviation_equivalence_margin",
+        "constrained_noninferiority_margin_nat_per_event", "constrained_noninferiority_alpha",
+        "component_family_alpha", "component_multiplicity_method",
+        "require_positive_sensitivity_without_december",
+        "posterior_interval_nominal_coverage", "maximum_wall_seconds",
+    }
+    if continuous:
+        evaluation_keys |= {
+            "hazard_refinement_alpha",
+            "hazard_log_score_equivalence_margin_nat_per_event",
+            "hazard_rescaling_equivalence_margin",
+            "hazard_uncertainty_equivalence_margin",
+        }
+    _expect_keys(evaluation, evaluation_keys, "RunSpec.evaluation")
+    expected_dates = (
+        "2024-01-15", "2024-03-15", "2024-05-15", "2024-07-15",
+        "2024-09-15", "2024-11-15", "2024-12-15",
+    )
+    if _string_sequence(evaluation, "ordered_dates", "RunSpec.evaluation") != expected_dates:
+        raise ConfigError("RunSpec.evaluation.ordered_dates: unexpected freeze")
+    if _string_sequence(evaluation, "spot_dates", "RunSpec.evaluation") != (
+        "2024-01-15", "2024-07-15", "2024-12-15"
+    ):
+        raise ConfigError("RunSpec.evaluation.spot_dates: unexpected freeze")
+    for key in (
+        "rolling_origin_minimum_train_days", "block_minutes", "planned_blocks",
+        "minimum_valid_blocks",
+    ):
+        _integer(evaluation, key, "RunSpec.evaluation", positive=True)
+    if _integer(evaluation, "planned_blocks", "RunSpec.evaluation", positive=True) != 288:
+        raise ConfigError("RunSpec.evaluation.planned_blocks: expected 288")
+    string_keys_evaluation = {
+        "primary_family_id", "multiplicity_method", "calibration_family_id",
+        "component_multiplicity_method",
+    }
+    for key in string_keys_evaluation:
+        _string(evaluation, key, "RunSpec.evaluation")
+    boolean_key = "require_positive_sensitivity_without_december"
+    if not _boolean(evaluation, boolean_key, "RunSpec.evaluation"):
+        raise ConfigError(f"RunSpec.evaluation.{boolean_key}: expected true")
+    nonnegative_keys = {"uncertainty_margin_metric_minimum"}
+    for key in evaluation_keys - {
+        "ordered_dates", "spot_dates", "rolling_origin_minimum_train_days", "block_minutes",
+        "planned_blocks", "minimum_valid_blocks", boolean_key,
+    } - string_keys_evaluation:
+        value = _number(evaluation, key, "RunSpec.evaluation")
+        if key not in nonnegative_keys and value <= 0.0:
+            raise ConfigError(f"RunSpec.evaluation.{key}: expected positive number")
+        if key in nonnegative_keys and value < 0.0:
+            raise ConfigError(f"RunSpec.evaluation.{key}: expected nonnegative number")
+
+    acceptance = _table(data, "acceptance")
+    acceptance_keys = {
+        "require_synthetic_dependency_passed", "require_dependency_hashes",
+        "require_full_healthy_transition_support", "require_zero_future_timestamp_accesses",
+        "require_deterministic_replay", "require_all_filter_values_finite",
+        "require_positive_posterior_variance", "require_frozen_fold_parameters",
+        "require_primary_usability_family", "require_calibration_equivalence",
+        "require_constrained_noninferiority", "require_december_exclusion_sensitivity",
+        "require_clean_tree_for_claim", "stop_on_nonfinite_value",
+    }
+    if continuous:
+        acceptance_keys.add("require_hazard_refinement_equivalence")
+    _expect_keys(acceptance, acceptance_keys, "RunSpec.acceptance")
+    for key in acceptance_keys:
+        if not _boolean(acceptance, key, "RunSpec.acceptance"):
+            raise ConfigError(f"RunSpec.acceptance.{key}: expected true")
+
+    artifacts = _table(data, "artifacts")
+    _expect_keys(artifacts, {"output_root", "required_classes", "optional_classes"}, "RunSpec.artifacts")
+    if _string(artifacts, "output_root", "RunSpec.artifacts") != "outputs":
+        raise ConfigError("RunSpec.artifacts.output_root: expected outputs")
+    required = set(_string_sequence(artifacts, "required_classes", "RunSpec.artifacts"))
+    if required != {
+        "source_config", "resolved_runspec", "manifest", "log", "metrics_summary",
+        "metrics_raw", "table", "state",
+    }:
+        raise ConfigError(
+            f"RunSpec.artifacts.required_classes: unexpected {experiment_id} contract"
+        )
     optional = artifacts.get("optional_classes")
     if not isinstance(optional, list) or optional:
         raise ConfigError("RunSpec.artifacts.optional_classes: expected empty array")
@@ -2205,7 +2747,7 @@ def validate_runspec(data: Mapping[str, Any]) -> None:
     _validate_finite_tree(data)
     _validate_common(data)
     experiment_id = str(data["experiment_id"])
-    if experiment_id in EMPIRICAL_EXPERIMENTS or experiment_id in FILTER_SYNTHETIC_EXPERIMENTS:
+    if experiment_id in EMPIRICAL_EXPERIMENTS or experiment_id in ALL_FILTER_SYNTHETIC_EXPERIMENTS:
         return
     if experiment_id in FIGURE4_EXPERIMENTS:
         _validate_figure4(data, experiment_id)
@@ -2286,6 +2828,34 @@ def load_runspec(path: str | Path, repository_root: str | Path | None = None) ->
             ):
                 raise ConfigError(
                     "RunSpec.inputs.synthetic_dependency_filter_digest_sha256: digest mismatch"
+                )
+        elif data["experiment_id"] in EMPIRICAL_MARK_FILTER_EXPERIMENTS:
+            inputs = data["inputs"]
+            dependency_directory = root / "outputs" / str(inputs["p6_dependency_run"])
+            dependency_manifest = dependency_directory / "manifest.json"
+            state_manifest = dependency_directory / "state" / "extraction_manifest.json"
+            if not dependency_manifest.is_file() or not state_manifest.is_file():
+                raise ConfigError("RunSpec.inputs.p6_dependency_run: dependency artifacts are missing")
+            if hashlib.sha256(dependency_manifest.read_bytes()).hexdigest() != inputs[
+                "p6_dependency_manifest_sha256"
+            ]:
+                raise ConfigError("RunSpec.inputs.p6_dependency_manifest_sha256: hash mismatch")
+            if hashlib.sha256(state_manifest.read_bytes()).hexdigest() != inputs[
+                "p6_dependency_state_manifest_sha256"
+            ]:
+                raise ConfigError(
+                    "RunSpec.inputs.p6_dependency_state_manifest_sha256: hash mismatch"
+                )
+            synthetic_config = root / str(inputs["synthetic_dependency_config_path"])
+            if not synthetic_config.is_file():
+                raise ConfigError(
+                    "RunSpec.inputs.synthetic_dependency_config_path: config is missing"
+                )
+            if hashlib.sha256(synthetic_config.read_bytes()).hexdigest() != inputs[
+                "synthetic_dependency_config_sha256"
+            ]:
+                raise ConfigError(
+                    "RunSpec.inputs.synthetic_dependency_config_sha256: hash mismatch"
                 )
     else:
         paper = root / "docs" / "papers" / "2608.00885v1 - Optimal Trading of Microstructure Mean Reversion.pdf"

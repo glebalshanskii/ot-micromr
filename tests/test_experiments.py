@@ -38,6 +38,18 @@ class ExperimentTests(unittest.TestCase):
         self.assertTrue(present["manifest"])
         self.assertFalse(present["figure"])
 
+    def test_p6m_artifact_inventory_requires_empirical_outputs(self) -> None:
+        spec = load_runspec(
+            REPOSITORY_ROOT / "cfg" / "experiments" / "emp_mark_filter_001.toml"
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            present = _required_artifacts_present(spec, Path(temporary_directory))
+        self.assertEqual(set(present), set(spec.values["artifacts"]["required_classes"]))
+        self.assertTrue(present["manifest"])
+        self.assertFalse(present["metrics_raw"])
+        self.assertFalse(present["table"])
+        self.assertFalse(present["state"])
+
 
 if __name__ == "__main__":
     unittest.main()

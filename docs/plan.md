@@ -2,12 +2,14 @@
 
 > **Обновлено:** 2026-08-12
 >
-> **Ветка:** `feat/p6-causal-estimator`
+> **Ветка:** `feat/p6m-marked-filter`
 >
-> **Текущий статус:** P6 completed с negative empirical feasibility result; P7/P8 blocked
+> **Текущий статус:** P6C completed; numerical refinement passed, empirical state
+> usability/calibration negative
 >
-> **Следующий шаг:** preregister P6M — marked multi-spread causal model, который включает
-> compound BBO jumps и spreads шире двух ticks; strategy/P&L по-прежнему запрещены.
+> **Следующий шаг:** P7/P8 остаются blocked. Если empirical track продолжается,
+> preregister model redesign, который отделяет total event activity от directional mark
+> correction либо добавляет causal state observation; дополнительный hazard refinement не нужен.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -401,9 +403,10 @@ source TOML после запуска не переписывается под �
 | P4C. Current implementation cleanup | Synthetic | **completed** | One active implementation per experiment; 51 tests pass; direct P4 regression accepted |
 | P5. Data feasibility и universe freeze | Empirical | **completed; passed** | Content-addressed OKX sample, quality/eligibility gate и immutable splits прошли |
 | P6. Causal efficient-price estimation | Empirical | **completed; negative feasibility** | Synthetic passed; exact six-event empirical filter failed uncertainty gate |
-| P6M. Marked multi-spread causal extension | Empirical | **planned; preregistration required** | Multi-day blocked evaluation confirms likelihood, calibration и uncertainty improvement без P&L |
-| P7. Event-driven backtester | Empirical | **blocked on P6M** | Accounting, timestamp, fill, cost и latency tests |
-| P8. Nested development/validation | Empirical | **blocked on P6M/P7** | Заморожена одна primary strategy и limited secondary set |
+| P6M. Marked multi-spread causal extension | Empirical | **completed; event layer supported, latent-state usability negative** | Full transition support and event score passed; uncertainty/calibration failed with adequate precision |
+| P6C. Continuous-hazard marked filter | Empirical | **completed; refinement passed, scientific result negative** | Endpoint/integrated likelihood valid; 4/8 equivalent; uncertainty/calibration failed |
+| P7. Event-driven backtester | Empirical | **blocked by negative P6C** | Accounting, timestamp, fill, cost и latency tests |
+| P8. Nested development/validation | Empirical | **blocked by negative P6C and absent P7** | Заморожена одна primary strategy и limited secondary set |
 | P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
 | P10. Synthesis/release | Common | pending | Plan, ADRs, reports, README и provenance согласованы |
 
@@ -846,7 +849,7 @@ Audit day `2024-12-15` остаётся полноценной частью reus
 только явно учитывать, что hypothesis была сформулирована после просмотра этого дня, и
 не выдавать результат только на нём за независимое подтверждение.
 
-### P6M. Marked multi-spread causal extension — planned
+### P6M. Marked multi-spread causal extension — completed; negative latent-state usability
 
 P6M — practical-local extension, а не исправление paper-faithful six-event model. Его
 цель — проверить конкретное объяснение отрицательного P6: наблюдаемый OKX BBO часто
@@ -854,18 +857,31 @@ P6M — practical-local extension, а не исправление paper-faithful
 Orders, fills, strategy thresholds и P&L на P6M запрещены.
 Architecture direction зафиксирован в
 [`ADR-0015`](adr/0015-marked-multi-spread-causal-model.md); исполняемые statistical
-details ещё требуют preregistration.
+details были заморожены до target outputs в
+[`p6m-marked-multi-spread.md`](protocols/empirical/p6m-marked-multi-spread.md).
+Итоговое решение: [`ADR-0016`](adr/0016-p6m-negative-latent-state-usability.md), полный
+provenance и metrics: [`p6m-marked-multi-spread.md`](reports/p6m-marked-multi-spread.md).
+
+Known-$X$ synthetic leg прошёл все 11 gates. Empirical rolling-origin run обработал
+`1,122,613 / 1,122,613` healthy transitions и 288 blocks. Proper log-score improvement
+full model равен `0.30486 nat/event` с adjusted lower bound `0.26239 > 0.01`; multi-tick
+и multi-spread components отдельно значимы. Однако mean metric
+$1-median(SD)/option\ margin=-0.60873$, а multiplicity-adjusted interval
+`[-0.69000,-0.52747]` целиком ниже нуля. Time-rescaling mean `2.2083` и SD `5.3285`
+также целиком вне equivalence regions. Это powered negative, не нехватка blocks.
+Исключение `2024-12-15` сохраняет отрицательный uncertainty result.
 
 #### Model contract
 
-Для integer bid/ask ticks $b_t,a_t$ ввести наблюдаемый spread state и event mark
+Для integer bid/ask ticks $b_t,a_t$ сохранить наблюдаемый spread state и exact raw
+transition
 
 $$
 D_t=a_t-b_t,\qquad M_t=\frac{\delta(a_t+b_t)}{2},\qquad
 r_t=(\Delta b_t,\Delta a_t).
 $$
 
-Каждый mark однозначно задаёт
+Каждый exact raw transition однозначно задаёт
 
 $$
 J_r=\Delta M_t=\frac{\delta}{2}(\Delta b_t+\Delta a_t),\qquad
@@ -873,11 +889,12 @@ J_r=\Delta M_t=\frac{\delta}{2}(\Delta b_t+\Delta a_t),\qquad
 $$
 
 Paper slides, opens и closes остаются вложенными special cases. Primary empirical model
-напрямую оценивает observed batch mark, не придумывая недоступный порядок latent
-micro-events внутри одного exchange payload. Tight translations допускают любое integer
-jump magnitude; $D$ допускает все positive observed values через train-frozen finite
-support плюс обязательный overflow bucket. Healthy non-snapshot transition не получает
-label `other` только из-за размера jump или spread.
+оценивает fixed coarsening raw batch transition: previous spread `1..7,8+`, signs price и
+spread changes, девять power-of-two magnitude buckets для каждого change — всего 729 marks
+на spread bucket. Он не придумывает недоступный порядок latent micro-events внутри одного
+exchange payload; exact bid/ask endpoints сохраняются в content-addressed dependency.
+Healthy non-snapshot transition не получает label `other` только из-за размера jump или
+spread.
 
 Gap-dependent marked intensities сохраняют mechanism статьи:
 
@@ -903,10 +920,10 @@ factorization, tail law, spread cap, regularization и feature set замора�
 соответствующего held-out fold внутри blocked evaluation.
 
 Proper-score baseline не может просто присвоить zero probability новым marks: это сделало
-бы победу full-support model тривиальной. Поэтому основной comparator — frozen six-event
-gap-dependent channel P6 плюс train-fitted gap-independent residual mark channel с тем же
-support/tail convention. Старый reset filter сохраняется как state-uncertainty comparator,
-но не используется как improper all-event likelihood baseline.
+бы победу full-support model тривиальной. Поэтому frozen comparator — train-fitted
+gap-independent residual mark channel с тем же полным support и smoothing convention.
+P6 six-event/reset result остаётся dependency/context, но не является improper all-event
+likelihood baseline.
 
 #### Порядок реализации
 
@@ -942,11 +959,10 @@ support/tail convention. Старый reset filter сохраняется как
    ablations лишь при заранее подтверждённой likelihood/calibration пользе. Same-venue spot
    остаётся causal diagnostic reference и не добавляется одновременно как primary
    measurement update: иначе источник улучшения нельзя атрибутировать новой event model.
-7. Выполнить обязательные one-factor controls: frozen P6 six-event/reset state baseline;
-   six-event плюс gap-independent full-support residual proper-score baseline;
-   multi-tick marks при прежнем two-spread support; multi-spread support без batch
-   translations; full marked multi-spread model; unconstrained drift diagnostic. Сохранять
-   полный search budget и результаты всех variants.
+7. Выполнить обязательные one-factor controls: gap-independent full-support residual
+   proper-score baseline; correction без multi-tick; correction без multi-spread; full
+   marked multi-spread model; unconstrained drift diagnostic. Сохранять полный fixed
+   budget и результаты всех variants.
 8. После protocol freeze выполнить multi-day blocked evaluation, оформить report/manifest
    и принять решение о P7. `2024-12-15` включается наравне с другими днями, но обязательно
    приводится sensitivity result с его исключением.
@@ -970,7 +986,7 @@ support/tail convention. Старый reset filter сохраняется как
   заранее заданными practical margins; простое отсутствие significant rejection не
   считается calibration evidence. Theory-constrained model должен быть non-inferior
   unconstrained comparator по held-out likelihood в preregistered margin.
-- **Downstream usability:** one-sided block-bootstrap upper 95% bound для отношения
+- **Downstream usability:** multiplicity-adjusted Student-$t$ block bound для отношения
   posterior uncertainty к optimistic option-value margin должен быть ниже `1`; causal
   midpoint/spot diagnostics и parameter stability не должны показывать заранее заданную
   practically material degradation. Spot остаётся proxy, не ground truth.
@@ -979,9 +995,50 @@ support/tail convention. Старый reset filter сохраняется как
   P7 разрешён только после положительного P6M decision; переход из-за одного увеличения
   supported-transition fraction запрещён.
 
+### P6C. Continuous-hazard marked filter — completed; negative
+
+P6C исправляет конкретное расхождение P6M с continuous-time law статьи, не меняя dataset,
+mark support или научные границы. Решение зафиксировано в
+[`ADR-0017`](adr/0017-continuous-hazard-empirical-filter.md), исполняемый protocol —
+[`p6c-continuous-hazard.md`](protocols/empirical/p6c-continuous-hazard.md), config —
+[`emp_mark_ct_001.toml`](../cfg/experiments/emp_mark_ct_001.toml).
+
+Задачи этапа:
+
+1. Для fit вычислять mark intensity по causal proxy gap непосредственно перед event и
+   заменять left-hazard exposure на trapezoidal integrated hazard по всему интервалу.
+2. В particle filter векторно семплировать Brownian subpaths, обновлять weight как
+   $\log\lambda_m(G_{t_{i+1}^-})-\int\Lambda(G_u)du$ и сохранять continuity $X$ при book jump.
+3. Primary CUDA `torch.compile` path использует четыре substeps, refinement — восемь
+   nested substeps с общими Brownian endpoints. Paired 30-minute block differences обязаны
+   пройти multiplicity-adjusted equivalence по score, rescaling и uncertainty.
+4. Полностью переоценить rolling-origin fold parameters; старые P6M parameters не являются
+   P6C model. Повторить все P6M scientific/operational families без ослабления margins.
+5. После immutable target run построить free-running several-event forecast через
+   exponential cumulative-hazard threshold и Brownian-bridge refinement crossing time.
+6. Оформить отдельный report/ADR результата. Только simultaneous numerical convergence,
+   calibration и latent-state usability могут разблокировать P7.
+
+P6C приближает event clock к статье, но paper по-прежнему не задаёт empirical estimator:
+training conditioning на causal proxy остаётся явно отмеченной project approximation.
+
+Target run
+`EMP-MARK-CT-001/20260812T100151852237Z-c8a620999b93-det` выполнен с clean commit
+`6b2306e19eff55bba1d90033301a13b39bc5477a` за `126.13 s`. Все operational checks и
+nested 4/8-substep equivalence прошли. Fine-minus-primary means равны `0.0000713`
+nat/event для score, `-0.0000253` для rescaling и `0.000616` для uncertainty — на порядки
+внутри frozen margins.
+
+Scientific conclusion не изменился: log-score improvement `0.30398 nat/event` поддержан,
+но posterior SD/margin=`1.61985`, rescaling mean=`2.20883`, SD=`5.32993`. Continuous
+free-running rollout даёт 10 BBO events за `4.2255 s` против actual `14.7948 s`; midpoint
+MAE на horizon 10 `13.0478` хуже persistence `12.6651 USDT`. Полный provenance и сравнение:
+[`P6C report`](reports/p6c-continuous-hazard.md); решение:
+[`ADR-0018`](adr/0018-p6c-continuous-hazard-negative.md).
+
 ### P7. Event-driven backtest и accounting
 
-Precondition: P7 начинается только после положительного P6M decision и freeze marked
+Precondition: P7 начинается только после положительного P6C decision и freeze continuous-hazard
 filter. Backtester принимает signal state $(\widehat G,D)$, но primary practical policy
 отправляет новые orders только при tight spread $D=1$; wide-spread intervals продолжают
 обновлять filter и являются explicit no-entry state. Это не доказывает оптимальность
@@ -1134,8 +1191,8 @@ provenance. Разные information-set modes не агрегируются б�
 | `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | OKX eligibility, quality, split freeze | passed; `20260811T232210534423Z-45f5a299b7ff-det` |
 | `FILTER-SYN-001` | `cfg/experiments/filter_syn_001.toml` | Known-$X$ six-event causal-filter recovery | passed; `20260811T234700354892Z-9e7f2939b506-det` |
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Exact six-event empirical filter diagnostics | completed negative; `20260812T000514761846Z-7075bc32601b-det` |
-| `FILTER-MARK-SYN-001` | planned after P6M protocol freeze | Known-$X$ marked multi-spread recovery | planned |
-| `EMP-MARK-FILTER-001` | planned after P6M protocol/data freeze | Marked multi-spread empirical filter | planned |
+| `FILTER-MARK-SYN-001` | `cfg/experiments/filter_mark_syn_001.toml` | Known-$X$ marked multi-spread recovery | passed; `20260812T061258615041Z-6daac30b7613-det` |
+| `EMP-MARK-FILTER-001` | `cfg/experiments/emp_mark_filter_001.toml` | Marked multi-spread empirical filter | completed negative; `20260812T063536959101Z-9956cb3f2077-det` |
 | `BT-SMOKE-001` | `cfg/experiments/bt_smoke_001.toml` | Toy ledger and no-look-ahead | pending |
 | `BT-WF-001` | `cfg/experiments/bt_wf_001.toml` | Nested development/validation | pending |
 | `BT-HOLDOUT-001` | `cfg/experiments/bt_holdout_001.toml` | Locked primary test | pending |
@@ -1180,16 +1237,16 @@ provenance. Разные information-set modes не агрегируются б�
 
 ## 9. Ближайший исполняемый шаг
 
-P6 завершён отрицательным empirical feasibility result: implementation успешно
-восстанавливает latent state на собственном synthetic model, но exact six-event support
-покрывает только `7.7319%` audit BBO transitions, а posterior uncertainty в `2.759` раза
-выше optimistic strategy margin.
+P6C закончен. Он показал, что frozen-hazard approximation не была причиной отрицательного
+P6M: continuous fit/filter/rollout и 4→8 refinement дают тот же результат. P7/P8 и любой
+P&L search остаются запрещены.
 
-Следующий шаг — только P6M preregistration, без запуска strategy или P&L: создать ADR,
-synthetic/empirical protocols и strict configs для marked multi-spread model. Весь
-существующий P5/P6 dataset, включая `2024-12-15`, повторно используется в заранее
-зафиксированной multi-day blocked evaluation; новая загрузка перед P6M не требуется.
-Отдельно проверяется conclusion без `2024-12-15`, потому что этот день подсказал model
-hypothesis. После protocol freeze реализовать vectorized PyTorch mark
-pipeline/generator/likelihood и пройти synthetic/empirical gates. P7 остаётся blocked,
-пока полный scientific gate P6M не подтверждён.
+Следующее осмысленное направление, если проект продолжается, должно менять model boundary:
+
+1. отдельно моделировать total BBO activity $\Lambda_t$ и conditional mark probabilities,
+   чтобы directional signal не был обязан одновременно завышать event rate; либо
+2. добавить независимое causal наблюдение latent state и проверить его отдельной ablation.
+
+Перед реализацией требуется новый protocol/ADR и one-factor comparison с P6C. Простое
+увеличение числа seeds, ослабление uncertainty/calibration gates или дальнейшее дробление
+Brownian grid запрещено результатом numerical equivalence.
