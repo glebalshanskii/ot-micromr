@@ -174,6 +174,29 @@ midpoint RMSE — `5.39` и `9.12 USDT`. Spot не является truth, по�
 gap, а directional mark flow слишком слаб для anchoring Brownian state. Проверка требует
 отдельной causal measurement/state model, а не изменения acceptance threshold.
 
+### Descriptive one-step BBO visualization
+
+После завершения target run построен отдельно помеченный descriptive график для первых
+10 минут held-out `2024-12-15`. До каждого следующего observation используется фактический
+предыдущий BBO и сохранённые causal posterior mean/variance; mark intensities интегрируются
+по Gaussian moment approximation, а category переводится в bid/ask delta через train-only
+cell mean. Поэтому это условный one-step forecast при известном факте наступления event,
+не свободная будущая trajectory и не новый acceptance artifact.
+
+На 317 transitions model/persistence MAE составили `2.146/2.128 USDT` для midpoint и
+`0.350/0.086 USDT` для spread. В шести точках raw predicted conditional-mean spread был
+неположительным; post-hoc clipping не применялся. Этот diagnostic согласуется с основной
+calibration failure и показывает, почему визуальное совпадение absolute price levels нельзя
+считать predictive success: обе линии причинно anchored на предыдущем фактическом BBO.
+
+Reproducible command:
+
+```bash
+uv run python scripts/plot_p6m_predictions.py \
+  outputs/EMP-MARK-FILTER-001/20260812T063536959101Z-9956cb3f2077-det \
+  --start-utc 2024-12-15T00:00:00Z --window-minutes 10
+```
+
 ## Decision and next boundary
 
 P6M completed как powered negative latent-state usability result. Marked event layer можно
