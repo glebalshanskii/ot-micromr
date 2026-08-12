@@ -10,9 +10,11 @@ P5 подтвердил пригодность frozen OKX event sample и strict
 `BTC-USDT-SWAP`; подробности — в
 [`p5-okx-data-feasibility.md`](docs/reports/p5-okx-data-feasibility.md).
 P6M/P6C marked models поддержали все healthy BBO transitions, но latent-state
-uncertainty и event-clock calibration дали powered negative result. P6D проверяет
-следующую зарегистрированную extension: отдельный causal duration clock и
-conditional mark model. P7/P&L остаются blocked до P6D decision.
+uncertainty и event-clock calibration дали powered negative result. P6D отделил causal
+duration clock от conditional mark: clock moments прошли, но gap tilt не улучшил
+held-out mark score, а posterior uncertainty осталась неприемлемой. P7/P&L
+остаются blocked; подробности — в
+[`p6d-factorized-clock-mark.md`](docs/reports/p6d-factorized-clock-mark.md).
 
 ## Environment
 

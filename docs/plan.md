@@ -4,11 +4,11 @@
 >
 > **Ветка:** `feat/p6d-factorized-clock-mark`
 >
-> **Текущий статус:** P6D in progress; factorized clock/mark model preregistered
+> **Текущий статус:** P6D completed; clock moments calibrated, conditional mark/state result negative
 >
-> **Следующий шаг:** выполнить `EMP-MARK-FACT-001`, проверить отдельно
-> clock calibration, conditional-mark signal и downstream state usability. P7/P8 до
-> этого остаются blocked.
+> **Следующий шаг:** P7/P8 остаются blocked. Если empirical track
+> продолжается, до нового target run нужен новый state-observation mechanism;
+> простое усложнение clock не решает latent-state blocker.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -404,9 +404,9 @@ source TOML после запуска не переписывается под �
 | P6. Causal efficient-price estimation | Empirical | **completed; negative feasibility** | Synthetic passed; exact six-event empirical filter failed uncertainty gate |
 | P6M. Marked multi-spread causal extension | Empirical | **completed; event layer supported, latent-state usability negative** | Full transition support and event score passed; uncertainty/calibration failed with adequate precision |
 | P6C. Continuous-hazard marked filter | Empirical | **completed; refinement passed, scientific result negative** | Endpoint/integrated likelihood valid; 4/8 equivalent; uncertainty/calibration failed |
-| P6D. Factorized clock/mark filter | Empirical | **in progress; preregistered** | Separate causal duration clock is calibrated, conditional mark signal is supported, downstream uncertainty is usable |
-| P7. Event-driven backtester | Empirical | **blocked pending P6D** | Accounting, timestamp, fill, cost и latency tests |
-| P8. Nested development/validation | Empirical | **blocked pending P6D and absent P7** | Заморожена одна primary strategy и limited secondary set |
+| P6D. Factorized clock/mark filter | Empirical | **completed; clock passed, mark/state negative** | Separate clock moments calibrated; conditional gap tilt unsupported; state unusable |
+| P7. Event-driven backtester | Empirical | **blocked by negative P6D** | Accounting, timestamp, fill, cost и latency tests |
+| P8. Nested development/validation | Empirical | **blocked by negative P6D and absent P7** | Заморожена одна primary strategy и limited secondary set |
 | P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
 | P10. Synthesis/release | Common | pending | Plan, ADRs, reports, README и provenance согласованы |
 
@@ -1036,7 +1036,7 @@ MAE на horizon 10 `13.0478` хуже persistence `12.6651 USDT`. Полный 
 [`P6C report`](reports/p6c-continuous-hazard.md); решение:
 [`ADR-0018`](adr/0018-p6c-continuous-hazard-negative.md).
 
-### P6D. Factorized total-activity and conditional-mark model — in progress
+### P6D. Factorized total-activity and conditional-mark model — completed; negative
 
 P6D проверяет конкретную structural hypothesis из P6C: полезный
 directional signal не должен автоматически ускорять весь BBO event flow. Joint
@@ -1071,6 +1071,23 @@ direction. Полный interval likelihood разделяется на clock и
 Architecture: [`ADR-0019`](adr/0019-factorized-clock-mark-model.md); protocol:
 [`p6d-factorized-clock-mark.md`](protocols/empirical/p6d-factorized-clock-mark.md); config:
 [`emp_mark_fact_001.toml`](../cfg/experiments/emp_mark_fact_001.toml).
+
+Target run
+`EMP-MARK-FACT-001/20260812T105127206423Z-44416f08cb43-det` выполнен из clean
+commit `be0f33d6f014877786005f3437c63c88a8d382c5` за `127.62 s`. Clock moment
+family прошла: rescaling mean `1.0692`, simultaneous interval
+`[1.0583,1.0801]`; block SD `1.1380`, interval `[1.1262,1.1497]`. Однако
+conditional gap tilt не поддержан: mean gain `-0.0000834 nat/event`, interval
+`[-0.0001668,0.00000004]`. Posterior SD равен `8.426` option margins;
+state usability достоверно inferior.
+
+Наглядные distributions уточняют clock claim: зарегистрированные mean/SD
+проходят, но continuous lognormal law сглаживает большой дискретный пик
+actual durations около `0.01 s`; descriptive histogram TV distance `0.483`.
+Поэтому P6D не утверждает full-distribution clock calibration. Operational
+gates, required figures/data и exact December replay прошли. Полный отчёт:
+[`p6d-factorized-clock-mark.md`](reports/p6d-factorized-clock-mark.md); result decision:
+[`ADR-0020`](adr/0020-p6d-clock-pass-state-negative.md).
 
 ### P7. Event-driven backtest и accounting
 
@@ -1273,8 +1290,9 @@ provenance. Разные information-set modes не агрегируются б�
 
 ## 9. Ближайший исполняемый шаг
 
-P6D зарегистрирован как прямая проверка structural explanation P6C. Ближайший
-шаг — реализовать и запустить `EMP-MARK-FACT-001`, сохранив actual/predictive
-distributions и наглядные time-series diagnostics. P7/P8 остаются blocked, пока
-одновременно не пройдены clock calibration, conditional-mark ablation и downstream
-uncertainty gate.
+P6D закончен. Факторизация устранила завышение event-clock moments, но
+одновременно показала, что book-only latent gap не даёт out-of-sample directional
+gain и не идентифицирует $X$ с нужной точностью. P7/P8 и P&L search остаются
+blocked. Следующее осмысленное research direction должно добавлять causal
+state observation и сравнивать его отдельной ablation; только усложнять clock для
+разблокировки стратегии недостаточно.
