@@ -20,7 +20,9 @@ from ot_micromr.marked_filter import (
     encode_mark,
     magnitude_power_bucket,
     mark_metadata,
+    marked_total_intensity,
     previous_spread_bucket,
+    trapezoidal_integrated_hazard,
 )
 
 
@@ -100,6 +102,26 @@ class MarkedFilterTests(unittest.TestCase):
         )
         self.assertTrue(torch.all(torch.isfinite(scores)))
 
+    def test_trapezoidal_hazard_uses_the_complete_gap_path(self) -> None:
+        gap_path = torch.tensor(((-1.0, 0.0, 1.0),))
+        spread = torch.tensor((0,), dtype=torch.int64)
+        rates = torch.zeros(1)
+        correction = torch.ones(1)
+        total = marked_total_intensity(
+            gap_path, spread.unsqueeze(-1), rates, 1.0, correction, correction
+        )
+        integrated = trapezoidal_integrated_hazard(
+            gap_path,
+            torch.tensor((2.0,)),
+            spread,
+            rates,
+            1.0,
+            correction,
+            correction,
+        )
+        self.assertTrue(torch.equal(total, torch.tensor(((1.0, 0.0, 1.0),))))
+        self.assertTrue(torch.equal(integrated, torch.tensor((1.0,))))
+
     def test_empirical_tables_have_full_support_and_constrained_drift(self) -> None:
         delta_bid = torch.tensor((2, -2, 0, 0), dtype=torch.int64)
         delta_ask = torch.tensor((2, -2, -1, 1), dtype=torch.int64)
@@ -171,6 +193,7 @@ class MarkedFilterTests(unittest.TestCase):
             prior_mid_price=torch.zeros(4),
             proxy_price=torch.zeros(5),
             proxy_gap=torch.zeros(4),
+            endpoint_proxy_gap=torch.zeros(4),
             spot_reference=None,
             spot_reference_timestamp_ms=None,
         )

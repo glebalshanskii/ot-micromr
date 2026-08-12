@@ -128,8 +128,13 @@ class RunSpecTests(unittest.TestCase):
         empirical = load_runspec(
             REPOSITORY_ROOT / "cfg" / "experiments" / "emp_mark_filter_001.toml"
         )
+        continuous = load_runspec(
+            REPOSITORY_ROOT / "cfg" / "experiments" / "emp_mark_ct_001.toml"
+        )
         self.assertEqual(synthetic.values["model"]["mark_contract"], "fixed_729_bucket_v1")
         self.assertEqual(empirical.values["evaluation"]["planned_blocks"], 288)
+        self.assertEqual(continuous.values["numerics"]["hazard_primary_substeps"], 4)
+        self.assertEqual(continuous.values["numerics"]["hazard_refinement_substeps"], 8)
 
         data = load_data("emp_mark_filter_001.toml")
         data["strategy"]["enabled"] = True

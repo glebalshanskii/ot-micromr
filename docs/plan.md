@@ -4,12 +4,10 @@
 >
 > **Ветка:** `feat/p6m-marked-filter`
 >
-> **Текущий статус:** P6M completed; marked event prediction supported, empirical
-> latent-state usability negative
+> **Текущий статус:** P6C in progress; continuous-hazard refit/filter preregistered
 >
-> **Следующий шаг:** P7/P8 остаются blocked. До нового кода выбрать отдельную
-> observability/state-anchoring extension либо остановить empirical track; strategy/P&L
-> на текущем filter запрещены.
+> **Следующий шаг:** выполнить `EMP-MARK-CT-001`, проверить nested 4/8-substep
+> convergence и повторить causal calibration/uncertainty decisions. P7/P8 остаются blocked.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -404,8 +402,9 @@ source TOML после запуска не переписывается под �
 | P5. Data feasibility и universe freeze | Empirical | **completed; passed** | Content-addressed OKX sample, quality/eligibility gate и immutable splits прошли |
 | P6. Causal efficient-price estimation | Empirical | **completed; negative feasibility** | Synthetic passed; exact six-event empirical filter failed uncertainty gate |
 | P6M. Marked multi-spread causal extension | Empirical | **completed; event layer supported, latent-state usability negative** | Full transition support and event score passed; uncertainty/calibration failed with adequate precision |
-| P7. Event-driven backtester | Empirical | **blocked by negative P6M** | Accounting, timestamp, fill, cost и latency tests |
-| P8. Nested development/validation | Empirical | **blocked by negative P6M and absent P7** | Заморожена одна primary strategy и limited secondary set |
+| P6C. Continuous-hazard marked filter | Empirical | **in progress** | Endpoint event intensity, integrated survival, 4/8-substep equivalence and unchanged P6M scientific families |
+| P7. Event-driven backtester | Empirical | **blocked pending P6C** | Accounting, timestamp, fill, cost и latency tests |
+| P8. Nested development/validation | Empirical | **blocked pending P6C and absent P7** | Заморожена одна primary strategy и limited secondary set |
 | P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
 | P10. Synthesis/release | Common | pending | Plan, ADRs, reports, README и provenance согласованы |
 
@@ -994,9 +993,36 @@ likelihood baseline.
   P7 разрешён только после положительного P6M decision; переход из-за одного увеличения
   supported-transition fraction запрещён.
 
+### P6C. Continuous-hazard marked filter — in progress
+
+P6C исправляет конкретное расхождение P6M с continuous-time law статьи, не меняя dataset,
+mark support или научные границы. Решение зафиксировано в
+[`ADR-0017`](adr/0017-continuous-hazard-empirical-filter.md), исполняемый protocol —
+[`p6c-continuous-hazard.md`](protocols/empirical/p6c-continuous-hazard.md), config —
+[`emp_mark_ct_001.toml`](../cfg/experiments/emp_mark_ct_001.toml).
+
+Задачи этапа:
+
+1. Для fit вычислять mark intensity по causal proxy gap непосредственно перед event и
+   заменять left-hazard exposure на trapezoidal integrated hazard по всему интервалу.
+2. В particle filter векторно семплировать Brownian subpaths, обновлять weight как
+   $\log\lambda_m(G_{t_{i+1}^-})-\int\Lambda(G_u)du$ и сохранять continuity $X$ при book jump.
+3. Primary CUDA `torch.compile` path использует четыре substeps, refinement — восемь
+   nested substeps с общими Brownian endpoints. Paired 30-minute block differences обязаны
+   пройти multiplicity-adjusted equivalence по score, rescaling и uncertainty.
+4. Полностью переоценить rolling-origin fold parameters; старые P6M parameters не являются
+   P6C model. Повторить все P6M scientific/operational families без ослабления margins.
+5. После immutable target run построить free-running several-event forecast через
+   exponential cumulative-hazard threshold и Brownian-bridge refinement crossing time.
+6. Оформить отдельный report/ADR результата. Только simultaneous numerical convergence,
+   calibration и latent-state usability могут разблокировать P7.
+
+P6C приближает event clock к статье, но paper по-прежнему не задаёт empirical estimator:
+training conditioning на causal proxy остаётся явно отмеченной project approximation.
+
 ### P7. Event-driven backtest и accounting
 
-Precondition: P7 начинается только после положительного P6M decision и freeze marked
+Precondition: P7 начинается только после положительного P6C decision и freeze continuous-hazard
 filter. Backtester принимает signal state $(\widehat G,D)$, но primary practical policy
 отправляет новые orders только при tight spread $D=1$; wide-spread intervals продолжают
 обновлять filter и являются explicit no-entry state. Это не доказывает оптимальность
@@ -1195,18 +1221,8 @@ provenance. Разные information-set modes не агрегируются б�
 
 ## 9. Ближайший исполняемый шаг
 
-P6M завершён: расширение устранило unsupported-transition reset и подтвердило predictive
-ценность multi-tick/multi-spread marks, но не дало sufficiently narrow и calibrated latent
-state. Поэтому текущий filter не передаётся в P7, а P&L search не запускается.
-
-До следующего implementation stage требуется отдельное решение о границе empirical track:
-
-1. либо остановиться с честным отрицательным результатом для book-only estimator;
-2. либо preregister новую observability/state-anchoring extension, например causal
-   same-venue spot measurement или иную явно проверяемую state-observation model.
-
-Существующие даты, включая `2024-12-15`, разрешено использовать для разработки другой
-модели; это не запрещённые данные. Новый период нужен перед будущим confirmatory
-profitability claim, если новый estimator сначала пройдёт собственные synthetic,
-calibration и uncertainty gates. Простое ослабление P6M threshold или переход к P7
-запрещены.
+Запустить committed `EMP-MARK-CT-001` на существующих rolling-origin dates. Сначала должны
+пройти operational invariants и nested 4/8-substep equivalence; затем интерпретируются
+неизменённые proper-score, calibration и uncertainty families. После target run сохранить
+report, result ADR, refitted December state и continuous-hazard several-event visualization.
+До этого P7/P8 и любой P&L search запрещены.

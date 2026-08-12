@@ -42,7 +42,7 @@ SIMULATION_EXPERIMENTS = BALANCED_SIMULATION_EXPERIMENTS | UNBALANCED_SIMULATION
 FIGURE4_EXPERIMENTS = {"SIM-FIG4-002"}
 EMPIRICAL_DATA_EXPERIMENTS = {"EMP-DATA-001"}
 EMPIRICAL_FILTER_EXPERIMENTS = {"EMP-FILTER-001"}
-EMPIRICAL_MARK_FILTER_EXPERIMENTS = {"EMP-MARK-FILTER-001"}
+EMPIRICAL_MARK_FILTER_EXPERIMENTS = {"EMP-MARK-FILTER-001", "EMP-MARK-CT-001"}
 EMPIRICAL_EXPERIMENTS = (
     EMPIRICAL_DATA_EXPERIMENTS
     | EMPIRICAL_FILTER_EXPERIMENTS
@@ -239,7 +239,7 @@ def _validate_common(data: Mapping[str, Any]) -> None:
         _validate_empirical_filter(data)
         return
     if experiment_id in EMPIRICAL_MARK_FILTER_EXPERIMENTS:
-        _validate_empirical_mark_filter(data)
+        _validate_empirical_mark_filter(data, experiment_id)
         return
     if experiment_id in FIGURE4_EXPERIMENTS:
         return
@@ -2217,9 +2217,10 @@ def _validate_empirical_filter(data: Mapping[str, Any]) -> None:
         raise ConfigError("RunSpec.artifacts.optional_classes: expected empty array")
 
 
-def _validate_empirical_mark_filter(data: Mapping[str, Any]) -> None:
+def _validate_empirical_mark_filter(data: Mapping[str, Any], experiment_id: str) -> None:
     if not _boolean(data, "claim_eligible", "RunSpec"):
-        raise ConfigError("RunSpec.claim_eligible: EMP-MARK-FILTER-001 requires true")
+        raise ConfigError(f"RunSpec.claim_eligible: {experiment_id} requires true")
+    continuous = experiment_id == "EMP-MARK-CT-001"
 
     seed = _table(data, "seed_policy")
     _expect_keys(seed, {"rng_used", "rng_algorithm", "seeds", "mapping"}, "RunSpec.seed_policy")
@@ -2261,6 +2262,13 @@ def _validate_empirical_mark_filter(data: Mapping[str, Any]) -> None:
         "compute_backend", "compute_device", "state_dtype", "statistics_dtype",
         "compile_mode", "optimizer", "nonfinite_policy",
     }
+    if continuous:
+        numeric_keys |= {
+            "hazard_primary_substeps",
+            "hazard_refinement_substeps",
+            "hazard_random_substeps",
+        }
+        string_keys |= {"hazard_integration", "event_intensity_phase"}
     _expect_keys(numerics, numeric_keys | string_keys | {"compile_enabled"}, "RunSpec.numerics")
     expected_numerics = {
         "compute_backend": "torch",
@@ -2279,6 +2287,23 @@ def _validate_empirical_mark_filter(data: Mapping[str, Any]) -> None:
     for key in ("particle_count", "particle_chunk_events", "fit_batch_events", "optimizer_steps"):
         _integer(numerics, key, "RunSpec.numerics", positive=True)
     _number(numerics, "optimizer_learning_rate", "RunSpec.numerics", positive=True)
+    if continuous:
+        if _string(numerics, "hazard_integration", "RunSpec.numerics") != "brownian_path_trapezoid_v1":
+            raise ConfigError("RunSpec.numerics.hazard_integration: unexpected contract")
+        if _string(numerics, "event_intensity_phase", "RunSpec.numerics") != "pre_event_endpoint":
+            raise ConfigError("RunSpec.numerics.event_intensity_phase: expected pre_event_endpoint")
+        primary = _integer(numerics, "hazard_primary_substeps", "RunSpec.numerics", positive=True)
+        refinement = _integer(
+            numerics, "hazard_refinement_substeps", "RunSpec.numerics", positive=True
+        )
+        random_substeps = _integer(
+            numerics, "hazard_random_substeps", "RunSpec.numerics", positive=True
+        )
+        if primary != 4 or refinement != 8 or random_substeps != refinement:
+            raise ConfigError(
+                "RunSpec.numerics: EMP-MARK-CT-001 requires primary/refinement/random "
+                "substeps 4/8/8"
+            )
 
     inputs = _table(data, "inputs")
     input_keys = {
@@ -2355,7 +2380,7 @@ def _validate_empirical_mark_filter(data: Mapping[str, Any]) -> None:
         table = _table(data, section)
         _expect_keys(table, {"enabled", "reason"}, f"RunSpec.{section}")
         if _boolean(table, "enabled", f"RunSpec.{section}"):
-            raise ConfigError(f"RunSpec.{section}.enabled: EMP-MARK-FILTER-001 requires false")
+            raise ConfigError(f"RunSpec.{section}.enabled: {experiment_id} requires false")
         _string(table, "reason", f"RunSpec.{section}")
 
     evaluation = _table(data, "evaluation")
@@ -2375,6 +2400,13 @@ def _validate_empirical_mark_filter(data: Mapping[str, Any]) -> None:
         "require_positive_sensitivity_without_december",
         "posterior_interval_nominal_coverage", "maximum_wall_seconds",
     }
+    if continuous:
+        evaluation_keys |= {
+            "hazard_refinement_alpha",
+            "hazard_log_score_equivalence_margin_nat_per_event",
+            "hazard_rescaling_equivalence_margin",
+            "hazard_uncertainty_equivalence_margin",
+        }
     _expect_keys(evaluation, evaluation_keys, "RunSpec.evaluation")
     expected_dates = (
         "2024-01-15", "2024-03-15", "2024-05-15", "2024-07-15",
@@ -2423,6 +2455,8 @@ def _validate_empirical_mark_filter(data: Mapping[str, Any]) -> None:
         "require_constrained_noninferiority", "require_december_exclusion_sensitivity",
         "require_clean_tree_for_claim", "stop_on_nonfinite_value",
     }
+    if continuous:
+        acceptance_keys.add("require_hazard_refinement_equivalence")
     _expect_keys(acceptance, acceptance_keys, "RunSpec.acceptance")
     for key in acceptance_keys:
         if not _boolean(acceptance, key, "RunSpec.acceptance"):
@@ -2437,7 +2471,9 @@ def _validate_empirical_mark_filter(data: Mapping[str, Any]) -> None:
         "source_config", "resolved_runspec", "manifest", "log", "metrics_summary",
         "metrics_raw", "table", "state",
     }:
-        raise ConfigError("RunSpec.artifacts.required_classes: unexpected EMP-MARK-FILTER-001 contract")
+        raise ConfigError(
+            f"RunSpec.artifacts.required_classes: unexpected {experiment_id} contract"
+        )
     optional = artifacts.get("optional_classes")
     if not isinstance(optional, list) or optional:
         raise ConfigError("RunSpec.artifacts.optional_classes: expected empty array")

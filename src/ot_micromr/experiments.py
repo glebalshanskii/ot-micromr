@@ -496,7 +496,12 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                 ],
             }
         )
-    if spec.experiment_id == "EMP-MARK-FILTER-001":
+    if spec.experiment_id in {"EMP-MARK-FILTER-001", "EMP-MARK-CT-001"}:
+        extra_metrics = (
+            [run_directory / "metrics" / "hazard_refinement.json"]
+            if spec.experiment_id == "EMP-MARK-CT-001"
+            else []
+        )
         paths_by_class.update(
             {
                 "metrics_raw": [
@@ -506,6 +511,7 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                     run_directory / "metrics" / "replay.json",
                     run_directory / "metrics" / "sensitivity.json",
                     run_directory / "metrics" / "timestamp_audit.json",
+                    *extra_metrics,
                 ],
                 "table": [
                     run_directory / "tables" / "fold_parameters.csv",
@@ -605,7 +611,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_marked_synthetic_filter(spec, run_directory)
         elif spec.experiment_id == "EMP-FILTER-001":
             evaluation = evaluate_empirical_filter(spec, run_directory)
-        elif spec.experiment_id == "EMP-MARK-FILTER-001":
+        elif spec.experiment_id in {"EMP-MARK-FILTER-001", "EMP-MARK-CT-001"}:
             evaluation = evaluate_empirical_marked_filter(spec, run_directory)
         else:
             raise ExperimentError(f"experiment runner is not implemented: {spec.experiment_id}")
@@ -653,7 +659,11 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
 
     is_figure4 = spec.experiment_id == "SIM-FIG4-002"
     is_empirical_data = spec.experiment_id == "EMP-DATA-001"
-    is_empirical_filter = spec.experiment_id in {"EMP-FILTER-001", "EMP-MARK-FILTER-001"}
+    is_empirical_filter = spec.experiment_id in {
+        "EMP-FILTER-001",
+        "EMP-MARK-FILTER-001",
+        "EMP-MARK-CT-001",
+    }
     is_empirical_source = is_empirical_data or is_empirical_filter
     is_filter_synthetic = spec.experiment_id in {"FILTER-SYN-001", "FILTER-MARK-SYN-001"}
     numerics_manifest = (

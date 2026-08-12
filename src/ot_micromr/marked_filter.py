@@ -96,6 +96,53 @@ def previous_spread_bucket(spread_ticks: torch.Tensor, exact_maximum: int = 7) -
     return torch.clamp(spread_ticks.to(torch.int64), min=1, max=exact_maximum + 1) - 1
 
 
+def marked_total_intensity(
+    gap: torch.Tensor,
+    spread_index: torch.Tensor,
+    rates: torch.Tensor,
+    alpha: torch.Tensor | float,
+    correction_sum_down: torch.Tensor,
+    correction_sum_up: torch.Tensor,
+) -> torch.Tensor:
+    """Evaluate the full marked-process hazard with tensor broadcasting."""
+    return rates[spread_index] + alpha * torch.where(
+        gap >= 0.0,
+        gap * correction_sum_down[spread_index],
+        -gap * correction_sum_up[spread_index],
+    )
+
+
+def trapezoidal_integrated_hazard(
+    gap_path: torch.Tensor,
+    dt: torch.Tensor,
+    spread_index: torch.Tensor,
+    rates: torch.Tensor,
+    alpha: torch.Tensor | float,
+    correction_sum_down: torch.Tensor,
+    correction_sum_up: torch.Tensor,
+) -> torch.Tensor:
+    """Integrate a state-dependent hazard over the last path dimension."""
+    if gap_path.shape[-1] < 2:
+        raise ValueError("gap_path requires at least two time nodes")
+    expanded_spread = spread_index
+    expanded_dt = dt
+    while expanded_spread.ndim < gap_path.ndim - 1:
+        expanded_spread = expanded_spread.unsqueeze(-1)
+        expanded_dt = expanded_dt.unsqueeze(-1)
+    total = marked_total_intensity(
+        gap_path,
+        expanded_spread.unsqueeze(-1),
+        rates,
+        alpha,
+        correction_sum_down,
+        correction_sum_up,
+    )
+    step = expanded_dt / float(gap_path.shape[-1] - 1)
+    return (
+        0.5 * (total[..., 0] + total[..., -1]) + total[..., 1:-1].sum(dim=-1)
+    ) * step
+
+
 def _tensor_digest(values: Sequence[torch.Tensor]) -> str:
     digest = hashlib.sha256()
     for value in values:
@@ -890,6 +937,7 @@ class EmpiricalMarkedDay:
     prior_mid_price: torch.Tensor
     proxy_price: torch.Tensor
     proxy_gap: torch.Tensor
+    endpoint_proxy_gap: torch.Tensor
     spot_reference: torch.Tensor | None
     spot_reference_timestamp_ms: torch.Tensor | None
 
@@ -1047,6 +1095,7 @@ def _prepare_empirical_marked_days(
             prior_mid_price=mid[:-1],
             proxy_price=proxy,
             proxy_gap=mid[:-1] - proxy[:-1],
+            endpoint_proxy_gap=mid[:-1] - proxy[1:],
             spot_reference=spot_reference,
             spot_reference_timestamp_ms=spot_timestamp,
         )
@@ -1077,6 +1126,7 @@ def _stack_train_intervals(
         "delta_d",
         "previous_spread_ticks",
         "current_spread_ticks",
+        "endpoint_proxy_gap",
     )
     outputs: list[torch.Tensor] = []
     for field in fields:
@@ -1094,7 +1144,7 @@ def _empirical_probability_tables(
     beta: float,
     variant: str,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    gap, spread, mark, dt, delta_y, _, previous_spread, current_spread = train
+    gap, spread, mark, dt, delta_y, _, previous_spread, current_spread, *_ = train
     del gap, dt
     flat = spread * MARK_COUNT + mark
     counts = torch.bincount(flat, minlength=8 * MARK_COUNT).to(torch.float64).reshape(8, MARK_COUNT)
@@ -1186,7 +1236,10 @@ def _fit_empirical_model(
     sigma_x: float,
     s_g: float,
 ) -> EmpiricalModel:
-    gap, spread, mark, dt, *_ = train
+    gap, spread, mark, dt, *rest = train
+    endpoint_gap = rest[4] if len(rest) >= 5 else gap
+    continuous = spec.experiment_id == "EMP-MARK-CT-001"
+    hazard_substeps = int(spec.values["numerics"].get("hazard_primary_substeps", 1))
     beta = float(spec.values["model"]["dirichlet_smoothing_beta"])
     probabilities, correction, correction_down, correction_up, _, baseline_drift = (
         _empirical_probability_tables(train, beta, variant)
@@ -1204,6 +1257,7 @@ def _fit_empirical_model(
         batch_spread: torch.Tensor,
         batch_mark: torch.Tensor,
         batch_dt: torch.Tensor,
+        batch_endpoint_gap: torch.Tensor,
         probabilities_arg: torch.Tensor,
         correction_arg: torch.Tensor,
         correction_down_arg: torch.Tensor,
@@ -1212,20 +1266,49 @@ def _fit_empirical_model(
         parameters = torch.nn.functional.softplus(raw_parameters) + 1e-7
         rates = parameters[:8]
         alpha = parameters[8]
+        selected_gap = batch_endpoint_gap if continuous else batch_gap
         directions = mark_metadata(batch_gap.device)[0][batch_mark]
         directional_gap = torch.where(
             directions > 0,
-            torch.clamp_min(-batch_gap, 0.0),
-            torch.where(directions < 0, torch.clamp_min(batch_gap, 0.0), torch.zeros_like(batch_gap)),
+            torch.clamp_min(-selected_gap, 0.0),
+            torch.where(
+                directions < 0,
+                torch.clamp_min(selected_gap, 0.0),
+                torch.zeros_like(selected_gap),
+            ),
         )
         selected = rates[batch_spread] * probabilities_arg[batch_spread, batch_mark]
         selected = selected + alpha * correction_arg[batch_spread, batch_mark] * directional_gap
-        total = rates[batch_spread] + alpha * torch.where(
-            batch_gap >= 0.0,
-            batch_gap * correction_down_arg[batch_spread],
-            -batch_gap * correction_up_arg[batch_spread],
-        )
-        return torch.mean(total * batch_dt - torch.log(torch.clamp_min(selected, 1e-30)))
+        if continuous:
+            fractions = torch.linspace(
+                0.0,
+                1.0,
+                hazard_substeps + 1,
+                device=batch_gap.device,
+                dtype=batch_gap.dtype,
+            )
+            gap_path = batch_gap.unsqueeze(-1) + (
+                batch_endpoint_gap - batch_gap
+            ).unsqueeze(-1) * fractions
+            integrated = trapezoidal_integrated_hazard(
+                gap_path,
+                batch_dt,
+                batch_spread,
+                rates,
+                alpha,
+                correction_down_arg,
+                correction_up_arg,
+            )
+        else:
+            integrated = marked_total_intensity(
+                batch_gap,
+                batch_spread,
+                rates,
+                alpha,
+                correction_down_arg,
+                correction_up_arg,
+            ) * batch_dt
+        return torch.mean(integrated - torch.log(torch.clamp_min(selected, 1e-30)))
 
     loss = torch.compile(
         loss_function,
@@ -1237,12 +1320,12 @@ def _fit_empirical_model(
 
     def batch_at(step: int) -> tuple[torch.Tensor, ...]:
         if n <= batch_size:
-            return gap, spread, mark, dt
+            return gap, spread, mark, dt, endpoint_gap
         start = (step * batch_size) % n
         index = torch.remainder(
             torch.arange(batch_size, device=gap.device, dtype=torch.int64) + start, n
         )
-        return gap[index], spread[index], mark[index], dt[index]
+        return gap[index], spread[index], mark[index], dt[index], endpoint_gap[index]
 
     first_batch = batch_at(0)
     initial_loss = float(
@@ -1258,7 +1341,18 @@ def _fit_empirical_model(
         optimizer.step()
     parameters = torch.nn.functional.softplus(raw.detach()) + 1e-7
     final_loss = float(
-        loss(raw, gap, spread, mark, dt, probabilities, correction, correction_down, correction_up).detach()
+        loss(
+            raw,
+            gap,
+            spread,
+            mark,
+            dt,
+            endpoint_gap,
+            probabilities,
+            correction,
+            correction_down,
+            correction_up,
+        ).detach()
     )
     parameter_digest = _tensor_digest(
         (probabilities, correction, parameters, baseline_drift)
@@ -1349,7 +1443,7 @@ def _valid_segments(valid: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     return starts, ends - starts
 
 
-def _make_empirical_particle_chunk(spec: RunSpec):
+def _make_empirical_frozen_particle_chunk(spec: RunSpec):
     chunk_events = int(spec.values["numerics"]["particle_chunk_events"])
 
     def particle_chunk(
@@ -1421,6 +1515,129 @@ def _make_empirical_particle_chunk(spec: RunSpec):
     )
 
 
+def _make_empirical_continuous_particle_chunk(
+    spec: RunSpec, integration_substeps: int
+):
+    random_substeps = int(spec.values["numerics"]["hazard_random_substeps"])
+    if random_substeps % integration_substeps:
+        raise ExperimentError("hazard random substeps must be divisible by integration substeps")
+    coarsening = random_substeps // integration_substeps
+
+    def particle_chunk(
+        particles: torch.Tensor,
+        log_weights: torch.Tensor,
+        prior_mid: torch.Tensor,
+        prior_spread: torch.Tensor,
+        events: torch.Tensor,
+        dt: torch.Tensor,
+        normals: torch.Tensor,
+        offsets: torch.Tensor,
+        probabilities: torch.Tensor,
+        correction: torch.Tensor,
+        correction_down: torch.Tensor,
+        correction_up: torch.Tensor,
+        rates: torch.Tensor,
+        alpha: torch.Tensor,
+        sigma_x: torch.Tensor,
+    ) -> tuple[torch.Tensor, ...]:
+        if coarsening > 1:
+            path_normals = normals.reshape(
+                *normals.shape[:-1], integration_substeps, coarsening
+            ).sum(dim=-1) / math.sqrt(coarsening)
+        else:
+            path_normals = normals
+        scale = sigma_x * torch.sqrt(dt / float(integration_substeps))
+        increments = scale.unsqueeze(-1).unsqueeze(-1) * path_normals
+        event_increments = increments.sum(dim=-1)
+        particle_ends = particles.unsqueeze(0) + torch.cumsum(event_increments, dim=0)
+        particle_starts = torch.cat((particles.unsqueeze(0), particle_ends[:-1]), dim=0)
+        path_x = torch.cat(
+            (
+                particle_starts.unsqueeze(-1),
+                particle_starts.unsqueeze(-1) + torch.cumsum(increments, dim=-1),
+            ),
+            dim=-1,
+        )
+        gap_path = prior_mid.unsqueeze(-1).unsqueeze(-1) - path_x
+        endpoint_gap = gap_path[..., -1]
+        safe_events = torch.clamp_min(events, 0)
+        direction = mark_metadata(events.device)[0][safe_events]
+        directional_gap = torch.where(
+            direction.unsqueeze(-1) > 0,
+            torch.clamp_min(-endpoint_gap, 0.0),
+            torch.where(
+                direction.unsqueeze(-1) < 0,
+                torch.clamp_min(endpoint_gap, 0.0),
+                torch.zeros_like(endpoint_gap),
+            ),
+        )
+        selected = rates[prior_spread] * probabilities[prior_spread, safe_events]
+        selected = selected.unsqueeze(-1) + alpha * correction[
+            prior_spread, safe_events
+        ].unsqueeze(-1) * directional_gap
+        integrated = trapezoidal_integrated_hazard(
+            gap_path,
+            dt,
+            prior_spread,
+            rates,
+            alpha,
+            correction_down,
+            correction_up,
+        )
+        interval_score = torch.where(
+            events.unsqueeze(-1) >= 0,
+            torch.log(torch.clamp_min(selected, 1e-30)) - integrated,
+            -integrated,
+        )
+        cumulative = log_weights.unsqueeze(0) + torch.cumsum(interval_score, dim=0)
+        normalizers = torch.logsumexp(cumulative, dim=-1)
+        previous_normalizers = torch.cat(
+            (normalizers.new_zeros((1, normalizers.shape[1])), normalizers[:-1]), dim=0
+        )
+        predictive = normalizers - previous_normalizers
+        normalized = cumulative - normalizers.unsqueeze(-1)
+        weights = torch.exp(normalized)
+        estimates = torch.sum(weights * particle_ends, dim=-1)
+        variances = torch.sum(
+            weights * torch.square(particle_ends - estimates.unsqueeze(-1)), dim=-1
+        )
+        prior_cumulative = torch.cat((log_weights.unsqueeze(0), cumulative[:-1]), dim=0)
+        prior_normalized = prior_cumulative - torch.logsumexp(
+            prior_cumulative, dim=-1, keepdim=True
+        )
+        expected_hazard = torch.sum(torch.exp(prior_normalized) * integrated, dim=-1)
+        particles, log_weights = systematic_resample(
+            particle_ends[-1], normalized[-1], offsets
+        )
+        return (
+            particles,
+            log_weights,
+            estimates,
+            variances,
+            predictive,
+            expected_hazard,
+        )
+
+    return torch.compile(
+        particle_chunk,
+        mode=str(spec.values["numerics"]["compile_mode"]),
+        fullgraph=True,
+    )
+
+
+def _make_empirical_particle_chunk(
+    spec: RunSpec, integration_substeps: int | None = None
+):
+    if spec.experiment_id != "EMP-MARK-CT-001":
+        return _make_empirical_frozen_particle_chunk(spec)
+    selected = (
+        int(spec.values["numerics"]["hazard_primary_substeps"])
+        if integration_substeps is None
+        else integration_substeps
+    )
+    return _make_empirical_continuous_particle_chunk(spec, selected)
+
+
 def _filter_empirical_day(
     spec: RunSpec,
     day: EmpiricalMarkedDay,
@@ -1431,6 +1648,8 @@ def _filter_empirical_day(
     device = day.timestamps_ms.device
     particle_count = int(spec.values["numerics"]["particle_count"])
     chunk_events = int(spec.values["numerics"]["particle_chunk_events"])
+    continuous = spec.experiment_id == "EMP-MARK-CT-001"
+    random_substeps = int(spec.values["numerics"].get("hazard_random_substeps", 1))
     group_size = 64
     starts, lengths = _valid_segments(day.valid_interval)
     mid = (day.bid_ticks + day.ask_ticks).to(torch.float32) * 0.05
@@ -1459,8 +1678,13 @@ def _filter_empirical_day(
             events = torch.where(valid, day.mark_id[safe], torch.full_like(safe, -1))
             prior_mid = day.prior_mid_price[safe]
             prior_spread = day.previous_spread_bucket[safe]
+            normal_shape = (
+                (chunk_events, group_size, particle_count, random_substeps)
+                if continuous
+                else (chunk_events, group_size, particle_count)
+            )
             normals = torch.randn(
-                (chunk_events, group_size, particle_count),
+                normal_shape,
                 device=device,
                 dtype=torch.float32,
                 generator=generator,
@@ -1676,7 +1900,7 @@ def evaluate_empirical_marked_filter(
     spec: RunSpec, run_directory: Path
 ) -> MarkedEvaluationResult:
     if not torch.cuda.is_available():
-        raise ExperimentError("EMP-MARK-FILTER-001 requires an available CUDA device")
+        raise ExperimentError(f"{spec.experiment_id} requires an available CUDA device")
     started = time.perf_counter()
     values = spec.values
     evaluation = values["evaluation"]
@@ -1867,6 +2091,56 @@ def evaluate_empirical_marked_filter(
         and torch.equal(replay_output.predictive_score, full_outputs["2024-12-15"].predictive_score)
     )
 
+    refinement_rows: list[dict[str, Any]] = []
+    refinement_output: DayFilterOutput | None = None
+    refinement_equivalent = True
+    if spec.experiment_id == "EMP-MARK-CT-001":
+        refinement_chunk = _make_empirical_particle_chunk(
+            spec, int(values["numerics"]["hazard_refinement_substeps"])
+        )
+        refinement_output = _filter_empirical_day(
+            spec, december_day, replay_model, replay_seed, refinement_chunk
+        )
+        _, _, december_option_margin = _dawson_threshold_margin(replay_model.s_g, 0.05)
+        primary_output = full_outputs["2024-12-15"]
+        refinement_vectors = {
+            "hazard_log_score_fine_minus_primary": (
+                refinement_output.predictive_score - primary_output.predictive_score,
+                float(evaluation["hazard_log_score_equivalence_margin_nat_per_event"]),
+            ),
+            "hazard_rescaling_fine_minus_primary": (
+                refinement_output.expected_rescaling - primary_output.expected_rescaling,
+                float(evaluation["hazard_rescaling_equivalence_margin"]),
+            ),
+            "hazard_uncertainty_fine_minus_primary": (
+                -(
+                    torch.sqrt(torch.clamp_min(refinement_output.variance[1:], 0.0))
+                    - torch.sqrt(torch.clamp_min(primary_output.variance[1:], 0.0))
+                )
+                / december_option_margin,
+                float(evaluation["hazard_uncertainty_equivalence_margin"]),
+            ),
+        }
+        for metric, (event_values, margin) in refinement_vectors.items():
+            block_values, _, _ = _block_reduce(
+                december_day,
+                event_values,
+                reduction="mean",
+                block_minutes=block_minutes,
+            )
+            refinement_rows.append(
+                _equivalence_row(
+                    block_values,
+                    0.0,
+                    margin,
+                    float(evaluation["hazard_refinement_alpha"]),
+                    metric,
+                )
+            )
+        refinement_equivalent = all(
+            row["status"] == "equivalent" for row in refinement_rows
+        )
+
     block_device = days[ordered_dates[0]].timestamps_ms.device
     metric_names = (
         "log_score_improvement", "uncertainty_metric", "rescaling_mean", "rescaling_std",
@@ -1946,6 +2220,8 @@ def evaluate_empirical_marked_filter(
     sensitivity_passed = float(sensitivity_score) > 0.0 and float(sensitivity_uncertainty) > 0.0
     elapsed = time.perf_counter() - started
     all_outputs = [output for date_outputs in full_outputs.values() for output in (date_outputs,)]
+    if refinement_output is not None:
+        all_outputs.append(refinement_output)
     all_finite = all(
         bool(torch.all(torch.isfinite(tensor)))
         for output in all_outputs
@@ -1975,6 +2251,8 @@ def evaluate_empirical_marked_filter(
         "december_exclusion_sensitivity": sensitivity_passed,
         "wall_time_within_limit": elapsed < float(evaluation["maximum_wall_seconds"]),
     }
+    if spec.experiment_id == "EMP-MARK-CT-001":
+        acceptance["hazard_refinement_equivalence"] = refinement_equivalent
     metrics = {
         "synthetic_dependency_run": synthetic_run,
         "synthetic_dependency_manifest_sha256": synthetic_manifest_hash,
@@ -2003,8 +2281,24 @@ def evaluate_empirical_marked_filter(
         "december_filter_digest_sha256": full_outputs["2024-12-15"].digest,
         "elapsed_seconds": elapsed,
     }
+    if refinement_rows:
+        metrics.update(
+            hazard_primary_substeps=int(values["numerics"]["hazard_primary_substeps"]),
+            hazard_refinement_substeps=int(values["numerics"]["hazard_refinement_substeps"]),
+            hazard_refinement_equivalent=refinement_equivalent,
+            **{
+                f"{row['metric']}_mean": float(row["mean"])
+                for row in refinement_rows
+            },
+        )
 
-    inference_rows = primary_rows + calibration_rows + [noninferiority_row] + component_rows
+    inference_rows = (
+        primary_rows
+        + calibration_rows
+        + [noninferiority_row]
+        + component_rows
+        + refinement_rows
+    )
     write_csv(
         run_directory / "metrics" / "block_metrics.csv",
         _union_fieldnames(block_rows),
@@ -2073,9 +2367,28 @@ def evaluate_empirical_marked_filter(
             "equality_allowed": True,
         },
     )
+    if refinement_rows:
+        atomic_write_json(
+            run_directory / "metrics" / "hazard_refinement.json",
+            {
+                "schema_version": "p6c-hazard-refinement-v1",
+                "date": "2024-12-15",
+                "primary_substeps": int(values["numerics"]["hazard_primary_substeps"]),
+                "refinement_substeps": int(
+                    values["numerics"]["hazard_refinement_substeps"]
+                ),
+                "nested_random_substeps": int(values["numerics"]["hazard_random_substeps"]),
+                "all_equivalent": refinement_equivalent,
+                "inference": refinement_rows,
+            },
+        )
     _save_torch_artifact(
         {
-            "schema_version": "p6m-december-filter-state-v1",
+            "schema_version": (
+                "p6c-december-filter-state-v1"
+                if spec.experiment_id == "EMP-MARK-CT-001"
+                else "p6m-december-filter-state-v1"
+            ),
             "date": "2024-12-15",
             "timestamps_ms": december_day.timestamps_ms.to("cpu"),
             "filtered_efficient_price": full_outputs["2024-12-15"].estimate.to("cpu"),
@@ -2097,6 +2410,9 @@ def evaluate_empirical_marked_filter(
             "fold_count": len(ordered_dates) - 1,
             "cuda_device": torch.cuda.get_device_name(),
             "synthetic_dependency_run": synthetic_run,
+            "hazard_integration": str(
+                values["numerics"].get("hazard_integration", "frozen_left_endpoint")
+            ),
         },
         log_lines=(
             f"folds={len(ordered_dates)-1}; blocks={vectors['log_score_improvement'].numel()}",
@@ -2104,6 +2420,7 @@ def evaluate_empirical_marked_filter(
             f"uncertainty_metric={primary_rows[1]['mean']:.6g}; lower={primary_rows[1]['lower_bound']:.6g}",
             f"calibration_mean={calibration_rows[0]['mean']:.6g}; sd={calibration_rows[1]['mean']:.6g}",
             f"replay={deterministic_replay}; digest={full_outputs['2024-12-15'].digest}",
+            f"hazard_refinement_equivalent={refinement_equivalent}",
             f"acceptance_passed={all(acceptance.values())}",
         ),
     )
