@@ -110,6 +110,11 @@ def _union_fieldnames(rows: Sequence[Mapping[str, Any]]) -> list[str]:
     return list(dict.fromkeys(key for row in rows for key in row))
 
 
+def _save_torch_artifact(payload: Mapping[str, Any], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(payload, path)
+
+
 def _normal_lower_bound(values: torch.Tensor, alpha: float) -> tuple[float, float, float]:
     sample = values.to(torch.float64)
     mean = sample.mean()
@@ -2053,7 +2058,7 @@ def evaluate_empirical_marked_filter(
             "equality_allowed": True,
         },
     )
-    torch.save(
+    _save_torch_artifact(
         {
             "schema_version": "p6m-december-filter-state-v1",
             "date": "2024-12-15",

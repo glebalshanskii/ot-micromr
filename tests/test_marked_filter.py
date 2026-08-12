@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from ot_micromr.marked_filter import (
     _block_reduce,
     _empirical_probability_tables,
     _inverse_softplus,
+    _save_torch_artifact,
     _marked_interval_score,
     _synthetic_mark_tables,
     _union_fieldnames,
@@ -133,6 +135,13 @@ class MarkedFilterTests(unittest.TestCase):
     def test_union_fieldnames_accepts_sparse_diagnostic_columns(self) -> None:
         rows = ({"date": "a", "metric": 1.0}, {"date": "b", "spot_metric": 2.0})
         self.assertEqual(_union_fieldnames(rows), ["date", "metric", "spot_metric"])
+
+    def test_torch_artifact_writer_creates_parent_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "state" / "tensor.pt"
+            _save_torch_artifact({"value": torch.tensor((1.0, 2.0))}, path)
+            payload = torch.load(path, weights_only=True)
+        self.assertTrue(torch.equal(payload["value"], torch.tensor((1.0, 2.0))))
 
     def test_block_median_is_vectorized_and_even_count_uses_midpoint(self) -> None:
         day = EmpiricalMarkedDay(
