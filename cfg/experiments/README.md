@@ -20,6 +20,7 @@ config.
 | `FILTER-MARK-SYN-001` | `filter_mark_syn_001.toml` | Known-$X$ marked multi-spread filter validation | passed; `20260812T061258615041Z-6daac30b7613-det` |
 | `EMP-MARK-FILTER-001` | `emp_mark_filter_001.toml` | Rolling-origin marked multi-spread OKX filter evaluation | completed negative; `20260812T063536959101Z-9956cb3f2077-det` |
 | `EMP-MARK-CT-001` | `emp_mark_ct_001.toml` | Continuous-hazard refit/filter with endpoint event intensity and nested path quadrature | completed negative; refinement passed; `20260812T100151852237Z-c8a620999b93-det` |
+| `EMP-MARK-FACT-001` | `emp_mark_fact_001.toml` | Separate causal renewal clock and latent-gap conditional mark model | completed negative; clock moments passed; `20260812T105127206423Z-44416f08cb43-det` |
 
 `emp_data_001_sources.toml` is the strict acquisition contract for the P5 target. It contains
 only official OKX URLs selected from train dates. Acquisition is always explicit:

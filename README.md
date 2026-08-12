@@ -9,10 +9,12 @@ scientific family осталась `inconclusive`; подробности — в
 P5 подтвердил пригодность frozen OKX event sample и strict large-tick eligibility
 `BTC-USDT-SWAP`; подробности — в
 [`p5-okx-data-feasibility.md`](docs/reports/p5-okx-data-feasibility.md).
-P6M marked model поддержал все healthy BBO transitions и улучшил event prediction, но
-latent-state uncertainty и calibration дали powered negative result; P7/P&L search
-остаются blocked. Подробности — в
-[`p6m-marked-multi-spread.md`](docs/reports/p6m-marked-multi-spread.md).
+P6M/P6C marked models поддержали все healthy BBO transitions, но latent-state
+uncertainty и event-clock calibration дали powered negative result. P6D отделил causal
+duration clock от conditional mark: clock moments прошли, но gap tilt не улучшил
+held-out mark score, а posterior uncertainty осталась неприемлемой. P7/P&L
+остаются blocked; подробности — в
+[`p6d-factorized-clock-mark.md`](docs/reports/p6d-factorized-clock-mark.md).
 
 ## Environment
 
@@ -80,11 +82,15 @@ uv run ot-micromr validate-config cfg/experiments/filter_mark_syn_001.toml
 uv run ot-micromr run cfg/experiments/filter_mark_syn_001.toml
 uv run ot-micromr validate-config cfg/experiments/emp_mark_filter_001.toml
 uv run ot-micromr run cfg/experiments/emp_mark_filter_001.toml
+uv run ot-micromr validate-config cfg/experiments/emp_mark_fact_001.toml
+uv run ot-micromr run cfg/experiments/emp_mark_fact_001.toml
 ```
 
 Empirical marked run требует прошедший synthetic dependency и verified P6 processed
-tensors. Оба paths используют vectorized PyTorch CUDA `float32`, `torch.compile` и
-PyTorch `float64` для final statistics. Они не выполняют orders, fills или P&L.
+tensors. Paths используют vectorized PyTorch CUDA `float32`, `torch.compile` и
+PyTorch `float64` для final statistics. P6D дополнительно сохраняет causal
+time-series и actual-versus-predictive distribution figures. Ни один empirical filter
+не выполняет orders, fills или P&L.
 
 Каждый run создаёт неперезаписываемую директорию `outputs/<experiment_id>/<run_id>/` с
 source config, resolved `RunSpec`, manifest, raw metrics, tables и figures. `outputs/`

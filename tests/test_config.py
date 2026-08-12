@@ -141,6 +141,20 @@ class RunSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "strategy.enabled: EMP-MARK-FILTER-001"):
             validate_runspec(data)
 
+    def test_p6d_factorized_filter_contract_validates(self) -> None:
+        spec = load_runspec(
+            REPOSITORY_ROOT / "cfg" / "experiments" / "emp_mark_fact_001.toml"
+        )
+        self.assertEqual(
+            spec.values["model"]["factorization"],
+            "renewal_clock_times_conditional_mark_v1",
+        )
+        self.assertEqual(spec.values["model"]["clock_history_events"], 200)
+        data = load_data("emp_mark_fact_001.toml")
+        data["model"]["clock_history_events"] = 201
+        with self.assertRaisesRegex(ConfigError, "clock_history_events: expected 200"):
+            validate_runspec(data)
+
     def test_unknown_simulation_field_is_rejected(self) -> None:
         data = load_data("sim_moments_002.toml")
         data["simulation"]["implicit_dt"] = 0.1

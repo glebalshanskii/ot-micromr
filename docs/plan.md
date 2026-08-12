@@ -2,14 +2,13 @@
 
 > **Обновлено:** 2026-08-12
 >
-> **Ветка:** `feat/p6m-marked-filter`
+> **Ветка:** `feat/p6d-factorized-clock-mark`
 >
-> **Текущий статус:** P6C completed; numerical refinement passed, empirical state
-> usability/calibration negative
+> **Текущий статус:** P6D completed; clock moments calibrated, conditional mark/state result negative
 >
-> **Следующий шаг:** P7/P8 остаются blocked. Если empirical track продолжается,
-> preregister model redesign, который отделяет total event activity от directional mark
-> correction либо добавляет causal state observation; дополнительный hazard refinement не нужен.
+> **Следующий шаг:** P7/P8 остаются blocked. Если empirical track
+> продолжается, до нового target run нужен новый state-observation mechanism;
+> простое усложнение clock не решает latent-state blocker.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -405,8 +404,9 @@ source TOML после запуска не переписывается под �
 | P6. Causal efficient-price estimation | Empirical | **completed; negative feasibility** | Synthetic passed; exact six-event empirical filter failed uncertainty gate |
 | P6M. Marked multi-spread causal extension | Empirical | **completed; event layer supported, latent-state usability negative** | Full transition support and event score passed; uncertainty/calibration failed with adequate precision |
 | P6C. Continuous-hazard marked filter | Empirical | **completed; refinement passed, scientific result negative** | Endpoint/integrated likelihood valid; 4/8 equivalent; uncertainty/calibration failed |
-| P7. Event-driven backtester | Empirical | **blocked by negative P6C** | Accounting, timestamp, fill, cost и latency tests |
-| P8. Nested development/validation | Empirical | **blocked by negative P6C and absent P7** | Заморожена одна primary strategy и limited secondary set |
+| P6D. Factorized clock/mark filter | Empirical | **completed; clock passed, mark/state negative** | Separate clock moments calibrated; conditional gap tilt unsupported; state unusable |
+| P7. Event-driven backtester | Empirical | **blocked by negative P6D** | Accounting, timestamp, fill, cost и latency tests |
+| P8. Nested development/validation | Empirical | **blocked by negative P6D and absent P7** | Заморожена одна primary strategy и limited secondary set |
 | P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
 | P10. Synthesis/release | Common | pending | Plan, ADRs, reports, README и provenance согласованы |
 
@@ -1036,10 +1036,63 @@ MAE на horizon 10 `13.0478` хуже persistence `12.6651 USDT`. Полный 
 [`P6C report`](reports/p6c-continuous-hazard.md); решение:
 [`ADR-0018`](adr/0018-p6c-continuous-hazard-negative.md).
 
+### P6D. Factorized total-activity and conditional-mark model — completed; negative
+
+P6D проверяет конкретную structural hypothesis из P6C: полезный
+directional signal не должен автоматически ускорять весь BBO event flow. Joint
+intensity факторизуется как
+
+$$
+\lambda_m(t)=\Lambda_{\psi}(t)\,p_{\theta}(m\mid\mathcal F_{t^-}),
+$$
+
+где $\Lambda_{\psi}$ — отдельный causal renewal clock, а $p_{\theta}$ — conditional
+mark distribution, в котором normalized latent gap меняет только веса
+direction. Полный interval likelihood разделяется на clock и mark terms.
+
+Задачи этапа:
+
+1. Оценивать lognormal duration law по rolling-origin training history; в held-out
+   day обновлять location/scale векторно и строго causal по 200 предыдущим
+   valid durations с 50-event training prior. Текущий duration в predictor не входит.
+2. Оценить gap-independent base mark table и один nonnegative directional-tilt
+   parameter. Нормировка mark probabilities гарантирует, что gap не
+   меняет total activity.
+3. В held-out particle filter сэмплировать Brownian endpoint точно для
+   каждого irregular interval; clock likelihood не меняет particle weights, mark
+   likelihood обновляет latent state.
+4. Сравнить с P6C по clock calibration, conditional mark score и posterior
+   SD/option-margin. Решение о P7 не принимается по одному улучшенному
+   clock metric.
+5. Сохранить обязательные figures: BBO/filter/time/direction time series,
+   actual-versus-predictive duration и mark distributions, PIT/time-rescaling и fold-level
+   calibration. Figure data сохраняются отдельно от PNG.
+
+Architecture: [`ADR-0019`](adr/0019-factorized-clock-mark-model.md); protocol:
+[`p6d-factorized-clock-mark.md`](protocols/empirical/p6d-factorized-clock-mark.md); config:
+[`emp_mark_fact_001.toml`](../cfg/experiments/emp_mark_fact_001.toml).
+
+Target run
+`EMP-MARK-FACT-001/20260812T105127206423Z-44416f08cb43-det` выполнен из clean
+commit `be0f33d6f014877786005f3437c63c88a8d382c5` за `127.62 s`. Clock moment
+family прошла: rescaling mean `1.0692`, simultaneous interval
+`[1.0583,1.0801]`; block SD `1.1380`, interval `[1.1262,1.1497]`. Однако
+conditional gap tilt не поддержан: mean gain `-0.0000834 nat/event`, interval
+`[-0.0001668,0.00000004]`. Posterior SD равен `8.426` option margins;
+state usability достоверно inferior.
+
+Наглядные distributions уточняют clock claim: зарегистрированные mean/SD
+проходят, но continuous lognormal law сглаживает большой дискретный пик
+actual durations около `0.01 s`; descriptive histogram TV distance `0.483`.
+Поэтому P6D не утверждает full-distribution clock calibration. Operational
+gates, required figures/data и exact December replay прошли. Полный отчёт:
+[`p6d-factorized-clock-mark.md`](reports/p6d-factorized-clock-mark.md); result decision:
+[`ADR-0020`](adr/0020-p6d-clock-pass-state-negative.md).
+
 ### P7. Event-driven backtest и accounting
 
-Precondition: P7 начинается только после положительного P6C decision и freeze continuous-hazard
-filter. Backtester принимает signal state $(\widehat G,D)$, но primary practical policy
+Precondition: P7 начинается только после положительного P6D decision и freeze
+factorized filter. Backtester принимает signal state $(\widehat G,D)$, но primary practical policy
 отправляет новые orders только при tight spread $D=1$; wide-spread intervals продолжают
 обновлять filter и являются explicit no-entry state. Это не доказывает оптимальность
 двумерной policy и не подменяет отдельное numerical switching extension.
@@ -1237,16 +1290,9 @@ provenance. Разные information-set modes не агрегируются б�
 
 ## 9. Ближайший исполняемый шаг
 
-P6C закончен. Он показал, что frozen-hazard approximation не была причиной отрицательного
-P6M: continuous fit/filter/rollout и 4→8 refinement дают тот же результат. P7/P8 и любой
-P&L search остаются запрещены.
-
-Следующее осмысленное направление, если проект продолжается, должно менять model boundary:
-
-1. отдельно моделировать total BBO activity $\Lambda_t$ и conditional mark probabilities,
-   чтобы directional signal не был обязан одновременно завышать event rate; либо
-2. добавить независимое causal наблюдение latent state и проверить его отдельной ablation.
-
-Перед реализацией требуется новый protocol/ADR и one-factor comparison с P6C. Простое
-увеличение числа seeds, ослабление uncertainty/calibration gates или дальнейшее дробление
-Brownian grid запрещено результатом numerical equivalence.
+P6D закончен. Факторизация устранила завышение event-clock moments, но
+одновременно показала, что book-only latent gap не даёт out-of-sample directional
+gain и не идентифицирует $X$ с нужной точностью. P7/P8 и P&L search остаются
+blocked. Следующее осмысленное research direction должно добавлять causal
+state observation и сравнивать его отдельной ablation; только усложнять clock для
+разблокировки стратегии недостаточно.

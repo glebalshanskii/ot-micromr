@@ -38,6 +38,7 @@ from ot_micromr.empirical_data import evaluate_empirical_data
 from ot_micromr.empirical_filter import evaluate_empirical_filter
 from ot_micromr.efficient_price import evaluate_synthetic_filter
 from ot_micromr.figure4_experiments import evaluate_figure4
+from ot_micromr.factorized_filter import evaluate_factorized_empirical_filter
 from ot_micromr.marked_filter import (
     evaluate_empirical_marked_filter,
     evaluate_marked_synthetic_filter,
@@ -521,6 +522,34 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                 "state": [run_directory / "state" / "december_filter.pt"],
             }
         )
+    if spec.experiment_id == "EMP-MARK-FACT-001":
+        paths_by_class.update(
+            {
+                "metrics_raw": [
+                    run_directory / "metrics" / "block_metrics.csv",
+                    run_directory / "metrics" / "day_diagnostics.csv",
+                    run_directory / "metrics" / "dependency_audit.json",
+                    run_directory / "metrics" / "replay.json",
+                    run_directory / "metrics" / "timestamp_audit.json",
+                ],
+                "table": [
+                    run_directory / "tables" / "fold_parameters.csv",
+                    run_directory / "tables" / "distribution_calibration.csv",
+                    run_directory / "tables" / "inference.csv",
+                ],
+                "state": [run_directory / "state" / "december_factorized_filter.pt"],
+                "figure_data": [
+                    run_directory / "figures" / "timeseries-data.csv",
+                    run_directory / "figures" / "predictive-distributions-data.csv",
+                    run_directory / "figures" / "fold-calibration-data.csv",
+                ],
+                "figure": [
+                    run_directory / "figures" / "timeseries.png",
+                    run_directory / "figures" / "predictive-distributions.png",
+                    run_directory / "figures" / "fold-calibration.png",
+                ],
+            }
+        )
     result: dict[str, bool] = {}
     for artifact_class in spec.values["artifacts"]["required_classes"]:
         if artifact_class == "manifest":
@@ -613,6 +642,8 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_empirical_filter(spec, run_directory)
         elif spec.experiment_id in {"EMP-MARK-FILTER-001", "EMP-MARK-CT-001"}:
             evaluation = evaluate_empirical_marked_filter(spec, run_directory)
+        elif spec.experiment_id == "EMP-MARK-FACT-001":
+            evaluation = evaluate_factorized_empirical_filter(spec, run_directory)
         else:
             raise ExperimentError(f"experiment runner is not implemented: {spec.experiment_id}")
         metrics = evaluation.metrics
@@ -663,6 +694,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
         "EMP-FILTER-001",
         "EMP-MARK-FILTER-001",
         "EMP-MARK-CT-001",
+        "EMP-MARK-FACT-001",
     }
     is_empirical_source = is_empirical_data or is_empirical_filter
     is_filter_synthetic = spec.experiment_id in {"FILTER-SYN-001", "FILTER-MARK-SYN-001"}
