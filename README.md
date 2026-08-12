@@ -75,6 +75,8 @@ uv run ot-micromr run cfg/experiments/emp_data_001.toml
 Download выполняется только первой явной командой. P5 использует OKX train sample,
 нормализует UTC+8 trade archive cuts, применяет full-snapshot health quarantine и не
 рассчитывает strategy/P&L. Raw files и outputs остаются локальными и не коммитятся.
+Полный обзор альтернативных sources и точный local inventory:
+[`docs/reports/market-data-sources.md`](docs/reports/market-data-sources.md).
 
 Causal-filter experiments:
 
