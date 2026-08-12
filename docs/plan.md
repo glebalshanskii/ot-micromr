@@ -4,10 +4,10 @@
 >
 > **Ветка:** `feat/p6-causal-estimator`
 >
-> **Текущий статус:** P5 completed/passed; P6 in progress, causal filter protocol frozen
+> **Текущий статус:** P6 completed с negative empirical feasibility result; P7/P8 blocked
 >
-> **Следующий шаг:** P7/P8 остановлены; до нового P&L search preregister causal same-venue
-> spot-observation extension как отдельный P6 experiment.
+> **Следующий шаг:** preregister P6M — marked multi-spread causal model, который включает
+> compound BBO jumps и spreads шире двух ticks; strategy/P&L по-прежнему запрещены.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -264,7 +264,8 @@ reconstruction с явно выбранным protocol. Exact reproduction Figur
 
 1. $X$ — exogenous Brownian martingale и в теории наблюдаем, хотя на рынке latent.
 2. Актив применим к two-valued spread regime; wider, locked/crossed и illiquid books
-   лежат вне модели.
+   лежат вне paper model. P6M расширяет этот state space только в practical-local track
+   и не меняет статус literal paper reproduction.
 3. Balanced response устраняет parity-dependent drift; на данных он может не выполняться.
 4. Trader мал, немедленно исполняется at touch и не меняет intensities; latency,
    adverse selection и market impact отсутствуют.
@@ -304,10 +305,14 @@ protocols до запусков.
 - **RQ4 / H-EST-1:** causal filter восстанавливает usable gap signal на synthetic data
   и превосходит заранее выбранные causal baselines; retrospective smoother служит
   только diagnostic oracle и никогда не генерирует backtest orders.
-- **RQ5 / H-EMP-1:** после costs net edge зависит прежде всего от effective
+- **RQ5 / H-EST-2:** marked multi-spread observation model поддерживает compound
+  BBO transitions без искусственной reinitialization, улучшает held-out event likelihood
+  и снижает causal posterior uncertainty достаточно для downstream option-value margin;
+  один только рост transition coverage не подтверждает hypothesis.
+- **RQ6 / H-EMP-1:** после costs net edge зависит прежде всего от effective
   $\gamma$, reversion speed, filter uncertainty, open-book occupancy, latency и
   balance violation. Знак empirical result заранее не предполагается.
-- **RQ6 / H-EMP-2:** theory-derived $\theta_D$ является competitive baseline; tuned
+- **RQ7 / H-EMP-2:** theory-derived $\theta_D$ является competitive baseline; tuned
   multiplier допускается только в nested validation и должен подтверждаться на untouched
   test.
 
@@ -359,7 +364,9 @@ source TOML после запуска не переписывается под �
   symbol и session;
 - best bid/ask prices and sizes до и после event, tick size и contract multiplier;
 - trades, quote updates, locked/crossed states, gaps in sequence и recovery semantics;
-- детерминированную классификацию `slide/open/close/other` и simultaneous-event policy;
+- детерминированный integer mark $(\Delta bid,\Delta ask)$, derived midpoint/spread
+  changes $(\Delta M,\Delta D)$, backward mapping в paper `slide/open/close` и
+  simultaneous/batched-event policy;
 - causal feature timestamps: ни один signal value не может использовать payload,
   опубликованный после decision time;
 - corporate actions/rolls/funding/borrow для выбранного asset class;
@@ -393,9 +400,10 @@ source TOML после запуска не переписывается под �
 | P4. Figures 2/4/5 и paper report | Synthetic | **completed** | Partial reproduction; corrected operational validity passed; scientific family inconclusive |
 | P4C. Current implementation cleanup | Synthetic | **completed** | One active implementation per experiment; 51 tests pass; direct P4 regression accepted |
 | P5. Data feasibility и universe freeze | Empirical | **completed; passed** | Content-addressed OKX sample, quality/eligibility gate и immutable splits прошли |
-| P6. Causal efficient-price estimation | Empirical | **in progress; protocol frozen** | Synthetic recovery и real-data diagnostics без P&L tuning |
-| P7. Event-driven backtester | Empirical | pending | Accounting, timestamp, fill, cost и latency tests |
-| P8. Nested development/validation | Empirical | pending | Заморожена одна primary strategy и limited secondary set |
+| P6. Causal efficient-price estimation | Empirical | **completed; negative feasibility** | Synthetic passed; exact six-event empirical filter failed uncertainty gate |
+| P6M. Marked multi-spread causal extension | Empirical | **planned; preregistration required** | Multi-day blocked evaluation confirms likelihood, calibration и uncertainty improvement без P&L |
+| P7. Event-driven backtester | Empirical | **blocked on P6M** | Accounting, timestamp, fill, cost и latency tests |
+| P8. Nested development/validation | Empirical | **blocked on P6M/P7** | Заморожена одна primary strategy и limited secondary set |
 | P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
 | P10. Synthesis/release | Common | pending | Plan, ADRs, reports, README и provenance согласованы |
 
@@ -824,7 +832,160 @@ Additional diagnostics согласуются с остановкой: unbalance
 tight/open states при отрицательном fitted mean-reversion slope. Это model mismatch, а не
 проблема только одного uncertainty threshold.
 
+Post-run decomposition сохранённого audit BBO state уточнил основной support mismatch.
+Из `78,480` transitions только `7.7319%` были exact paper events. Ещё `73.9666%` были
+tight-to-tight moves со сдвигом midpoint больше одного tick, `15.5492%` имели spread
+шире двух ticks хотя бы на одном конце, `1.8336%` приходились на snapshot boundaries,
+а остальные `0.9187%` — на неправильные tight/open/close jump sizes или open-to-open.
+При этом spread шире двух ticks занимал только `0.0824%` audit clock time: это краткие,
+но event-rich excursions, а не опровержение time-weighted large-tick eligibility P5.
+
+Эти числа мотивируют следующую model hypothesis и не меняют задним числом P6 result.
+Audit day `2024-12-15` остаётся полноценной частью reusable research dataset: его можно
+использовать в новой модели для fit, diagnostics, comparison и regression tests. Нужно
+только явно учитывать, что hypothesis была сформулирована после просмотра этого дня, и
+не выдавать результат только на нём за независимое подтверждение.
+
+### P6M. Marked multi-spread causal extension — planned
+
+P6M — practical-local extension, а не исправление paper-faithful six-event model. Его
+цель — проверить конкретное объяснение отрицательного P6: наблюдаемый OKX BBO часто
+показывает batch move, который нельзя честно считать одним primitive paper event.
+Orders, fills, strategy thresholds и P&L на P6M запрещены.
+Architecture direction зафиксирован в
+[`ADR-0015`](adr/0015-marked-multi-spread-causal-model.md); исполняемые statistical
+details ещё требуют preregistration.
+
+#### Model contract
+
+Для integer bid/ask ticks $b_t,a_t$ ввести наблюдаемый spread state и event mark
+
+$$
+D_t=a_t-b_t,\qquad M_t=\frac{\delta(a_t+b_t)}{2},\qquad
+r_t=(\Delta b_t,\Delta a_t).
+$$
+
+Каждый mark однозначно задаёт
+
+$$
+J_r=\Delta M_t=\frac{\delta}{2}(\Delta b_t+\Delta a_t),\qquad
+\Delta D_t=\Delta a_t-\Delta b_t.
+$$
+
+Paper slides, opens и closes остаются вложенными special cases. Primary empirical model
+напрямую оценивает observed batch mark, не придумывая недоступный порядок latent
+micro-events внутри одного exchange payload. Tight translations допускают любое integer
+jump magnitude; $D$ допускает все positive observed values через train-frozen finite
+support плюс обязательный overflow bucket. Healthy non-snapshot transition не получает
+label `other` только из-за размера jump или spread.
+
+Gap-dependent marked intensities сохраняют mechanism статьи:
+
+$$
+\lambda_r(G,D,Z)=\mu_r(D,Z)+\kappa_r(D,Z)
+[-\operatorname{sign}(J_r)G]^+,
+$$
+
+где $Z$ содержит только causally available pre-event features. Theory-constrained primary
+нормирует directional first moments так, чтобы для каждого supported $(D,Z)$ state
+
+$$
+\sum_{J_r>0}J_r\kappa_r(D,Z)=
+\sum_{J_r<0}|J_r|\kappa_r(D,Z)=\alpha,
+\qquad
+\sum_r J_r\mu_r(D,Z)=0,
+$$
+
+и поэтому сохраняет $E[dG_t\mid G_t,D_t,Z_t]=-\alpha G_tdt$. Unconstrained marked model
+разрешён только как заранее определённый likelihood diagnostic/non-inferiority comparator.
+Zero-midpoint spread marks имеют gap-independent correction term. Конкретные mark
+factorization, tail law, spread cap, regularization и feature set замораживаются до
+соответствующего held-out fold внутри blocked evaluation.
+
+Proper-score baseline не может просто присвоить zero probability новым marks: это сделало
+бы победу full-support model тривиальной. Поэтому основной comparator — frozen six-event
+gap-dependent channel P6 плюс train-fitted gap-independent residual mark channel с тем же
+support/tail convention. Старый reset filter сохраняется как state-uncertainty comparator,
+но не используется как improper all-event likelihood baseline.
+
+#### Порядок реализации
+
+1. На основе принятого [`ADR-0015`](adr/0015-marked-multi-spread-causal-model.md) до
+   model outputs создать empirical/synthetic protocols и strict configs
+   `FILTER-MARK-SYN-001`/`EMP-MARK-FILTER-001`. Зафиксировать estimands, downstream-derived
+   SESOI, multiplicity family, block unit, power/precision budget и stop rules; numeric
+   margins нельзя выбирать по target point estimates.
+2. Расширить immutable data contract: canonicalizer должен векторно выдавать
+   $(D_{t-},D_t,\Delta b,\Delta a,J_r,\Delta D,\Delta t)$, reset/health masks и только
+   pre-event L2/trade features. Добавить property tests grid arithmetic, positive spread,
+   timestamp causality, overflow support и exact backward mapping шести paper events.
+3. Повторно использовать весь существующий content-addressed P5/P6 dataset, включая
+   `2024-12-15`. Заранее зафиксировать rolling-origin chronological folds: параметры каждого
+   fold fit только на более ранних dates/blocks, а metrics агрегируются по последующим
+   held-out blocks.
+   Поскольку модельная идея была подсказана `2024-12-15`, отдельно показать результат
+   без этого дня и проверить, что conclusion не держится только на нём. Новая загрузка
+   данных не является precondition P6M; отдельный закрытый период понадобится перед
+   окончательным P9 profitability claim.
+4. Реализовать marked synthetic generator с известным $X$: multi-tick translations,
+   widening/narrowing, asymmetric and zero-midpoint spread changes, finite spread
+   recurrence и overflow stress. При ограничении mark support ровно шестью paper moves
+   и $D\in\{1,2\}$ generator должен редуцироваться к six-event paper model.
+5. Реализовать полностью vectorized PyTorch likelihood и causal particle filter для
+   event mark плюс no-event survival. Primary path — CUDA `torch.compile`; CPU path остаётся
+   PyTorch. Snapshot/data-health boundary может reset state, но multi-tick/wide-spread mark
+   сам по себе reset не вызывает.
+6. Сначала fit minimal mark model только по current $D$ и jump class/magnitude; observed
+   durations входят в point-process survival likelihood, а не добавляются как post-event
+   feature.
+   Depth, imbalance и trade-driven indicators добавлять по одному как train/selection-only
+   ablations лишь при заранее подтверждённой likelihood/calibration пользе. Same-venue spot
+   остаётся causal diagnostic reference и не добавляется одновременно как primary
+   measurement update: иначе источник улучшения нельзя атрибутировать новой event model.
+7. Выполнить обязательные one-factor controls: frozen P6 six-event/reset state baseline;
+   six-event плюс gap-independent full-support residual proper-score baseline;
+   multi-tick marks при прежнем two-spread support; multi-spread support без batch
+   translations; full marked multi-spread model; unconstrained drift diagnostic. Сохранять
+   полный search budget и результаты всех variants.
+8. После protocol freeze выполнить multi-day blocked evaluation, оформить report/manifest
+   и принять решение о P7. `2024-12-15` включается наравне с другими днями, но обязательно
+   приводится sensitivity result с его исключением.
+
+#### Gates и решение
+
+- **Operational, без фиктивной статистики:** exact tensor invariants, finite positive
+  intensities/variance, no future access, deterministic replay и valid mark для каждого
+  healthy non-snapshot BBO transition. Structural support/coverage сам по себе не является
+  scientific acceptance.
+- **Synthetic primary family:** paired state-error и predictive-log-score superiority
+  над causal baselines, а posterior coverage и constrained drift проходят equivalence.
+  Margins выводятся из допустимого искажения downstream threshold/rate, tests получают
+  multiplicity correction и рассчитанную power до запуска.
+- **Empirical primary family:** на held-out time blocks multiplicity-adjusted one-sided
+  lower bound для paired all-event proper-log-score improvement full model над six-event
+  плюс gap-independent residual baseline превышает preregistered SESOI. Full model также
+  должен показать отдельно значимый вклад multi-tick и multi-spread components либо
+  получить честный partial/negative result.
+- **Calibration:** event time-rescaling/mark calibration проверяются equivalence tests с
+  заранее заданными practical margins; простое отсутствие significant rejection не
+  считается calibration evidence. Theory-constrained model должен быть non-inferior
+  unconstrained comparator по held-out likelihood в preregistered margin.
+- **Downstream usability:** one-sided block-bootstrap upper 95% bound для отношения
+  posterior uncertainty к optimistic option-value margin должен быть ниже `1`; causal
+  midpoint/spot diagnostics и parameter stability не должны показывать заранее заданную
+  practically material degradation. Spot остаётся proxy, не ground truth.
+- Если operational checks пройдены, а scientific family или uncertainty gate нет, P6M
+  завершается как информативный negative/inconclusive result и P7/P8 остаются blocked.
+  P7 разрешён только после положительного P6M decision; переход из-за одного увеличения
+  supported-transition fraction запрещён.
+
 ### P7. Event-driven backtest и accounting
+
+Precondition: P7 начинается только после положительного P6M decision и freeze marked
+filter. Backtester принимает signal state $(\widehat G,D)$, но primary practical policy
+отправляет новые orders только при tight spread $D=1$; wide-spread intervals продолжают
+обновлять filter и являются explicit no-entry state. Это не доказывает оптимальность
+двумерной policy и не подменяет отдельное numerical switching extension.
 
 Задачи:
 
@@ -853,10 +1014,11 @@ strategy test P&L. Trading search начинается только после �
 
 Primary baseline:
 
-- causal filtered $\widehat G_t$;
+- frozen P6M causal filtered $(\widehat G_t,D_t)$;
 - realized state-dependent half-spread и known per-lot costs;
 - Dawson $\theta_D$ from rolling/past-only $(\widehat\alpha,\widehat s_G)$;
 - one-lot/two-lot flip semantics;
+- new entries only in preregistered supported spread states, initially $D=1$;
 - preregistered eligibility/risk gates.
 
 Required controls/ablations, по одному изменению за comparison:
@@ -868,6 +1030,7 @@ Required controls/ablations, по одному изменению за compariso
   $k_D\in\{0.7,0.8,0.9,1.0,1.1\}$, окончательно freeze в protocol);
 - oracle versus causal filter только на synthetic data;
 - balanced versus unbalanced response;
+- six-event/reset signal versus marked multi-spread signal;
 - frozen tight spread versus realized spread;
 - zero versus realistic latency; spread-only versus full costs;
 - parity-blind versus parity-aware band;
@@ -918,7 +1081,7 @@ Statistical protocol:
 | Reversion speed | $\alpha$ и half-life $\log 2/\alpha$ | Быстрее полезно лишь при latency намного меньше half-life |
 | Latency | $\alpha L$ | Рост должен уменьшать realized edge |
 | Jump granularity | $\delta/\theta$ и $\delta/(\theta-\phi-c)$ | Большие значения ухудшают surrogate accuracy |
-| Open occupancy | $p=\Pr(S=2\delta)$ и fill-state occupancy | Большое $p$ повышает realized costs/model mismatch |
+| Spread state | $\Pr(D=d)$, wide-excursion rate/duration и fill-state $D$ | Wider/event-rich excursions повышают uncertainty, costs и rejection risk |
 | Balance violation | $|\alpha_c-(2\alpha_s+\alpha_o)|/\alpha_{eff}$ | Большое значение ломает single-rate theory |
 | Filter uncertainty | posterior SD / $s_G$ и / margin | Большая uncertainty размывает threshold crossings |
 | Parameter stability | drift/variance across past windows | Нестабильность должна ухудшать transfer |
@@ -969,7 +1132,10 @@ provenance. Разные information-set modes не агрегируются б�
 | `SIM-FIG4-002` | `cfg/experiments/sim_fig4_002.toml` | Powered jump versus surrogate band sweep | operationally passed; scientific family inconclusive; `20260811T211511185484Z-e51b9cf3d54d-det` |
 | `SIM-FIG5-001` | integrated into `SIM-FIG4-002` artifacts | Strategy path, fills, wealth identities | completed illustrative artifact |
 | `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | OKX eligibility, quality, split freeze | passed; `20260811T232210534423Z-45f5a299b7ff-det` |
-| `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Oracle/causal filter diagnostics | pending |
+| `FILTER-SYN-001` | `cfg/experiments/filter_syn_001.toml` | Known-$X$ six-event causal-filter recovery | passed; `20260811T234700354892Z-9e7f2939b506-det` |
+| `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Exact six-event empirical filter diagnostics | completed negative; `20260812T000514761846Z-7075bc32601b-det` |
+| `FILTER-MARK-SYN-001` | planned after P6M protocol freeze | Known-$X$ marked multi-spread recovery | planned |
+| `EMP-MARK-FILTER-001` | planned after P6M protocol/data freeze | Marked multi-spread empirical filter | planned |
 | `BT-SMOKE-001` | `cfg/experiments/bt_smoke_001.toml` | Toy ledger and no-look-ahead | pending |
 | `BT-WF-001` | `cfg/experiments/bt_wf_001.toml` | Nested development/validation | pending |
 | `BT-HOLDOUT-001` | `cfg/experiments/bt_holdout_001.toml` | Locked primary test | pending |
@@ -978,8 +1144,11 @@ provenance. Разные information-set modes не агрегируются б�
 
 - Не переходить к Figure 4 claims, пока simulator не прошёл invariants и resolution
   convergence.
-- Не переходить к real-data P&L search, пока causal filter не прошёл P6 на synthetic
-  controls и timestamp audit.
+- Не переходить к real-data P&L search, пока marked causal filter не прошёл P6M synthetic
+  controls, multi-day blocked evaluation, timestamp audit, calibration и
+  uncertainty/margin gate.
+- Рост supported-transition fraction без held-out likelihood/calibration/uncertainty
+  evidence не разблокирует P7.
 - Не пытаться «найти прибыль» подбором costs, venue interval или universe после
   просмотра test.
 - Если gross edge не покрывает spread ещё до uncertain costs, остановить parameter
@@ -1011,10 +1180,16 @@ provenance. Разные information-set modes не агрегируются б�
 
 ## 9. Ближайший исполняемый шаг
 
-P5 завершён: OKX `BTC-USDT-SWAP` прошёл large-tick/data-quality gates, same-venue spot
-channel доступен, health-mask и UTC-normalized trade calendar однозначны, chronological
-splits заморожены. Следующий шаг — P6: до любого P&L experiment создать protocol/config для
-causal оценки latent efficient price $X_t$ только по OKX observations. Baseline должен
-сравнить swap-only filtered midpoint/microprice с same-venue spot reference, пройти
-synthetic recovery, timestamp/no-look-ahead audit и real-data residual diagnostics. Model
-choice делается на train без strategy P&L; validation/test остаются закрытыми.
+P6 завершён отрицательным empirical feasibility result: implementation успешно
+восстанавливает latent state на собственном synthetic model, но exact six-event support
+покрывает только `7.7319%` audit BBO transitions, а posterior uncertainty в `2.759` раза
+выше optimistic strategy margin.
+
+Следующий шаг — только P6M preregistration, без запуска strategy или P&L: создать ADR,
+synthetic/empirical protocols и strict configs для marked multi-spread model. Весь
+существующий P5/P6 dataset, включая `2024-12-15`, повторно используется в заранее
+зафиксированной multi-day blocked evaluation; новая загрузка перед P6M не требуется.
+Отдельно проверяется conclusion без `2024-12-15`, потому что этот день подсказал model
+hypothesis. После protocol freeze реализовать vectorized PyTorch mark
+pipeline/generator/likelihood и пройти synthetic/empirical gates. P7 остаётся blocked,
+пока полный scientific gate P6M не подтверждён.
