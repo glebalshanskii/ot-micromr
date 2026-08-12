@@ -38,6 +38,7 @@ from ot_micromr.empirical_data import evaluate_empirical_data
 from ot_micromr.empirical_filter import evaluate_empirical_filter
 from ot_micromr.efficient_price import evaluate_synthetic_filter
 from ot_micromr.figure4_experiments import evaluate_figure4
+from ot_micromr.marked_filter import evaluate_marked_synthetic_filter
 from ot_micromr.simulation_experiments import evaluate_simulation
 
 
@@ -459,6 +460,19 @@ def _required_artifacts_present(spec: RunSpec, run_directory: Path) -> dict[str,
                 "table": [run_directory / "tables" / "inference.csv"],
             }
         )
+    if spec.experiment_id == "FILTER-MARK-SYN-001":
+        paths_by_class.update(
+            {
+                "metrics_raw": [
+                    run_directory / "metrics" / "session_metrics.csv",
+                    run_directory / "metrics" / "replay.json",
+                ],
+                "table": [
+                    run_directory / "tables" / "inference.csv",
+                    run_directory / "tables" / "mark_table.csv",
+                ],
+            }
+        )
     if spec.experiment_id == "EMP-FILTER-001":
         paths_by_class.update(
             {
@@ -565,6 +579,8 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
             evaluation = evaluate_empirical_data(spec, run_directory)
         elif spec.experiment_id == "FILTER-SYN-001":
             evaluation = evaluate_synthetic_filter(spec, run_directory)
+        elif spec.experiment_id == "FILTER-MARK-SYN-001":
+            evaluation = evaluate_marked_synthetic_filter(spec, run_directory)
         elif spec.experiment_id == "EMP-FILTER-001":
             evaluation = evaluate_empirical_filter(spec, run_directory)
         else:
@@ -615,7 +631,7 @@ def run_experiment(spec: RunSpec, command: Sequence[str] | None = None) -> RunRe
     is_empirical_data = spec.experiment_id == "EMP-DATA-001"
     is_empirical_filter = spec.experiment_id == "EMP-FILTER-001"
     is_empirical_source = is_empirical_data or is_empirical_filter
-    is_filter_synthetic = spec.experiment_id == "FILTER-SYN-001"
+    is_filter_synthetic = spec.experiment_id in {"FILTER-SYN-001", "FILTER-MARK-SYN-001"}
     numerics_manifest = (
         {
             "market_float_dtype": spec.values["numerics"]["market_float_dtype"],
