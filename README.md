@@ -1,19 +1,20 @@
 # Optimal Trading of Microstructure Mean Reversion
 
-Независимое воспроизведение Amaral (2026) и подготовка к причинной проверке торговой
-стратегии на event-level рыночных данных. Реализованы analytical baseline для Dawson
-optimum/Figure 3, controlled synthetic jump simulator и гибридный CPU/CUDA эксперимент
-Figure 4. P3V поддержан глобальной Holm family. P4 operational validity пройдена, но
-scientific family осталась `inconclusive`; подробности — в
-[`paper-reproduction.md`](docs/reports/paper-reproduction.md).
-P5 подтвердил пригодность frozen OKX event sample и strict large-tick eligibility
-`BTC-USDT-SWAP`; подробности — в
-[`p5-okx-data-feasibility.md`](docs/reports/p5-okx-data-feasibility.md).
-P6M/P6C marked models поддержали все healthy BBO transitions, но latent-state
-uncertainty и event-clock calibration дали powered negative result. P6D отделил causal
-duration clock от conditional mark: clock moments прошли, но gap tilt не улучшил
-held-out mark score, а posterior uncertainty осталась неприемлемой. P7/P&L
-остаются blocked; подробности — в
+Завершённое независимое исследование Amaral (2026). Closed-form Dawson optimum и Figure 3
+воспроизведены; controlled jump simulator поддержал balanced-flow identities. Figures 2 и
+5 воспроизведены структурно, а Figure 4 — частично: две из трёх строк показали ожидаемый
+inward shift, но полная statistical family осталась `inconclusive`.
+
+Empirical extension на frozen OKX crypto sample завершён с результатом `negative` для
+проверенного book-only causal state estimator. Финальная factorized модель исправила
+event-clock moments, но conditional gap signal не улучшил held-out mark score, а
+posterior uncertainty составила `8.426` optimistic option margins. Поэтому backtest и P&L
+search не запускались. Доходность имеет статус `not-confirmed / not tested`, а не
+«стратегия доказанно убыточна».
+
+Итоговая claim-to-evidence матрица, canonical runs, deviations и limitations находятся в
+[`final-synthesis.md`](docs/reports/final-synthesis.md). Подробная paper reproduction — в
+[`paper-reproduction.md`](docs/reports/paper-reproduction.md), empirical endpoint — в
 [`p6d-factorized-clock-mark.md`](docs/reports/p6d-factorized-clock-mark.md).
 
 ## Environment
@@ -38,7 +39,7 @@ uv run ot-micromr validate-config cfg/experiments/ana_fig3_001.toml
 uv run ot-micromr run cfg/experiments/ana_fig3_001.toml
 ```
 
-Current controlled simulations:
+Controlled simulations:
 
 ```bash
 uv run ot-micromr validate-config cfg/experiments/sim_moments_002.toml
@@ -51,7 +52,7 @@ uv run ot-micromr run cfg/experiments/sim_unbalanced_002.toml
 Оба simulations используют 10 CPU workers, не пишут тяжёлый event log и требуют clean
 worktree. Полные horizons — `40000` и `20000` reversion times.
 
-Current Figure 4 reproduction:
+Figure 4 reproduction:
 
 ```bash
 uv run ot-micromr validate-config cfg/experiments/sim_fig4_002.toml
@@ -63,7 +64,7 @@ crossing/policy evaluation выполняет на CUDA в `float32` через 
 acceptance является частью runner-а; отдельного post-hoc review command нет. В config
 заморожен wall-clock budget 150 секунд для проверенного RTX 3080 Ti Laptop GPU.
 
-Current empirical data audit:
+Empirical data audit:
 
 ```bash
 uv run ot-micromr fetch-data cfg/experiments/emp_data_001_sources.toml
@@ -75,13 +76,19 @@ Download выполняется только первой явной коман�
 нормализует UTC+8 trade archive cuts, применяет full-snapshot health quarantine и не
 рассчитывает strategy/P&L. Raw files и outputs остаются локальными и не коммитятся.
 
-Current causal-filter experiments:
+Causal-filter experiments:
 
 ```bash
+uv run ot-micromr validate-config cfg/experiments/filter_syn_001.toml
+uv run ot-micromr run cfg/experiments/filter_syn_001.toml
+uv run ot-micromr validate-config cfg/experiments/emp_filter_001.toml
+uv run ot-micromr run cfg/experiments/emp_filter_001.toml
 uv run ot-micromr validate-config cfg/experiments/filter_mark_syn_001.toml
 uv run ot-micromr run cfg/experiments/filter_mark_syn_001.toml
 uv run ot-micromr validate-config cfg/experiments/emp_mark_filter_001.toml
 uv run ot-micromr run cfg/experiments/emp_mark_filter_001.toml
+uv run ot-micromr validate-config cfg/experiments/emp_mark_ct_001.toml
+uv run ot-micromr run cfg/experiments/emp_mark_ct_001.toml
 uv run ot-micromr validate-config cfg/experiments/emp_mark_fact_001.toml
 uv run ot-micromr run cfg/experiments/emp_mark_fact_001.toml
 ```
@@ -90,7 +97,8 @@ Empirical marked run требует прошедший synthetic dependency и v
 tensors. Paths используют vectorized PyTorch CUDA `float32`, `torch.compile` и
 PyTorch `float64` для final statistics. P6D дополнительно сохраняет causal
 time-series и actual-versus-predictive distribution figures. Ни один empirical filter
-не выполняет orders, fills или P&L.
+не выполняет orders, fills или P&L. Эти команды воспроизводят завершённое исследование;
+они не являются очередью будущих этапов.
 
 Каждый run создаёт неперезаписываемую директорию `outputs/<experiment_id>/<run_id>/` с
 source config, resolved `RunSpec`, manifest, raw metrics, tables и figures. `outputs/`
@@ -104,5 +112,5 @@ uv run ot-micromr --help
 uv run python -m unittest discover -s tests -t . -v
 ```
 
-Канонический статус и следующий этап: [`docs/plan.md`](docs/plan.md). Statistical policy:
+Канонический финальный статус: [`docs/plan.md`](docs/plan.md). Statistical policy:
 [`statistical-gates-v1`](docs/protocols/common/statistical-gates.md).

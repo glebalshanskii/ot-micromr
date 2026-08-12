@@ -2,13 +2,12 @@
 
 > **Обновлено:** 2026-08-12
 >
-> **Ветка:** `feat/p6d-factorized-clock-mark`
+> **Ветка:** `agent/p10-project-closeout`
 >
-> **Текущий статус:** P6D completed; clock moments calibrated, conditional mark/state result negative
+> **Текущий статус:** P10 completed; project closed with negative empirical-feasibility result
 >
-> **Следующий шаг:** P7/P8 остаются blocked. Если empirical track
-> продолжается, до нового target run нужен новый state-observation mechanism;
-> простое усложнение clock не решает latent-state blocker.
+> **Следующий шаг:** отсутствует внутри текущего scope. P7--P9 не выполняются;
+> новое исследование observable crypto signals требует отдельного protocol и untouched period.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -405,10 +404,10 @@ source TOML после запуска не переписывается под �
 | P6M. Marked multi-spread causal extension | Empirical | **completed; event layer supported, latent-state usability negative** | Full transition support and event score passed; uncertainty/calibration failed with adequate precision |
 | P6C. Continuous-hazard marked filter | Empirical | **completed; refinement passed, scientific result negative** | Endpoint/integrated likelihood valid; 4/8 equivalent; uncertainty/calibration failed |
 | P6D. Factorized clock/mark filter | Empirical | **completed; clock passed, mark/state negative** | Separate clock moments calibrated; conditional gap tilt unsupported; state unusable |
-| P7. Event-driven backtester | Empirical | **blocked by negative P6D** | Accounting, timestamp, fill, cost и latency tests |
-| P8. Nested development/validation | Empirical | **blocked by negative P6D and absent P7** | Заморожена одна primary strategy и limited secondary set |
-| P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
-| P10. Synthesis/release | Common | pending | Plan, ADRs, reports, README и provenance согласованы |
+| P7. Event-driven backtester | Empirical | **not executed; stopped by negative P6D precondition** | Accounting, timestamp, fill, cost и latency tests |
+| P8. Nested development/validation | Empirical | **not executed; stopped before strategy search** | Заморожена одна primary strategy и limited secondary set |
+| P9. Untouched test и robustness | Empirical | **not executed; 2025 holdout unopened** | Profitability gate либо честный negative result |
+| P10. Synthesis/release | Common | **completed; final outcome negative** | Plan, ADRs, reports, README и provenance согласованы |
 
 ### P0. Source audit и план — completed
 
@@ -1091,6 +1090,10 @@ gates, required figures/data и exact December replay прошли. Полный
 
 ### P7. Event-driven backtest и accounting
 
+**Closeout decision:** этап не выполнялся. Отрицательный P6D не прошёл обязательный
+causal-state precondition, поэтому реализация backtester-а не создавалась и P&L не
+вычислялась. Это `stopped by precondition`, а не отрицательный backtest.
+
 Precondition: P7 начинается только после положительного P6D decision и freeze
 factorized filter. Backtester принимает signal state $(\widehat G,D)$, но primary practical policy
 отправляет новые orders только при tight spread $D=1$; wide-spread intervals продолжают
@@ -1118,6 +1121,9 @@ Gate P7: hand-computed toy paths и property tests полностью сходя
 воспроизводится из fill ledger; impossible/optimistic fills отсутствуют.
 
 ### P8. Nested development и limited parameter search
+
+**Closeout decision:** этап не выполнялся. Ни один trading parameter, threshold multiplier,
+cost scenario или P&L cell не подбирался; primary strategy не замораживалась.
 
 Filter/model hyperparameters выбираются по filtering likelihood/calibration, а не по
 strategy test P&L. Trading search начинается только после их freeze.
@@ -1157,6 +1163,10 @@ aggregation/statistical method и stress scenarios; test hash и даты зап
 просмотрена.
 
 ### P9. Untouched test, profitability conditions и robustness
+
+**Closeout decision:** этап не выполнялся. Frozen 2025 validation/test periods не
+открывались для текущей hypothesis, поскольку P7/P8 отсутствуют. Доходность получает
+status `not-confirmed / not tested`, а не `negative P&L`.
 
 Primary analysis выполняется один раз. Повторное открытие test после изменения метода
 требует нового dataset/time period и нового protocol.
@@ -1226,10 +1236,27 @@ Profitability gate:
 - дать итог один из: `profitable-under-stated-conditions`, `not-confirmed`,
   `negative`, `data-blocked`, без усиления формулировки.
 
-## 6. Current experiment matrix
+Результат P10 — **completed / project outcome `negative`**. Финальная decision boundary
+зафиксирована в [`ADR-0021`](adr/0021-close-current-empirical-track.md), а единая
+claim-to-evidence матрица, canonical run provenance, tuning budget, deviations,
+limitations и artifact paths — в
+[`final-synthesis.md`](reports/final-synthesis.md).
 
-Active configs зарегистрированы как strict TOML contracts; будущие имена остаются planned
-до своих protocol stages. Historical executable variants удалены по
+Outcome `negative` относится к проверенному book-only causal state-identification
+подходу. Profitability status отдельно равен `not-confirmed / not tested`: orders, fills,
+costs и P&L не рассчитывались. P7--P9 остановлены по заранее заданной precondition, а не
+выполнены с отрицательной доходностью.
+
+P10 audit повторно пересчитал inventories 12 canonical run directories и сравнил path,
+size и SHA-256 каждого файла с manifest: 12/12 manifests, 143 artifacts и 57,578,544
+bytes прошли без missing/extra/changed records. Baseline CLI, full tests и отдельный
+locked fresh-environment smoke также прошли; exact commands приведены в итоговом отчёте.
+
+## 6. Final experiment matrix
+
+Исполняемые configs зарегистрированы как strict TOML contracts. Запланированные `BT-*`
+IDs не получили configs, потому что P7--P9 остановлены до implementation. Historical
+executable variants удалены по
 [`ADR-0010`](adr/0010-current-experiment-surface.md); их commits, ADRs и reports сохраняют
 provenance. Разные information-set modes не агрегируются без явной колонки `mode`.
 
@@ -1246,9 +1273,11 @@ provenance. Разные information-set modes не агрегируются б�
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Exact six-event empirical filter diagnostics | completed negative; `20260812T000514761846Z-7075bc32601b-det` |
 | `FILTER-MARK-SYN-001` | `cfg/experiments/filter_mark_syn_001.toml` | Known-$X$ marked multi-spread recovery | passed; `20260812T061258615041Z-6daac30b7613-det` |
 | `EMP-MARK-FILTER-001` | `cfg/experiments/emp_mark_filter_001.toml` | Marked multi-spread empirical filter | completed negative; `20260812T063536959101Z-9956cb3f2077-det` |
-| `BT-SMOKE-001` | `cfg/experiments/bt_smoke_001.toml` | Toy ledger and no-look-ahead | pending |
-| `BT-WF-001` | `cfg/experiments/bt_wf_001.toml` | Nested development/validation | pending |
-| `BT-HOLDOUT-001` | `cfg/experiments/bt_holdout_001.toml` | Locked primary test | pending |
+| `EMP-MARK-CT-001` | `cfg/experiments/emp_mark_ct_001.toml` | Continuous integrated-hazard marked filter | completed negative; `20260812T100151852237Z-c8a620999b93-det` |
+| `EMP-MARK-FACT-001` | `cfg/experiments/emp_mark_fact_001.toml` | Factorized clock/conditional-mark filter | clock moments passed; state result negative; `20260812T105127206423Z-44416f08cb43-det` |
+| `BT-SMOKE-001` | not created | Toy ledger and no-look-ahead | not executed; stopped by P6D precondition |
+| `BT-WF-001` | not created | Nested development/validation | not executed; no strategy search |
+| `BT-HOLDOUT-001` | not created | Locked primary test | not executed; holdout unopened |
 
 ## 7. Stop criteria и порядок решений
 
@@ -1290,9 +1319,12 @@ provenance. Разные information-set modes не агрегируются б�
 
 ## 9. Ближайший исполняемый шаг
 
-P6D закончен. Факторизация устранила завышение event-clock moments, но
-одновременно показала, что book-only latent gap не даёт out-of-sample directional
-gain и не идентифицирует $X$ с нужной точностью. P7/P8 и P&L search остаются
-blocked. Следующее осмысленное research direction должно добавлять causal
-state observation и сравнивать его отдельной ablation; только усложнять clock для
-разблокировки стратегии недостаточно.
+Текущий план завершён; исполняемого следующего шага внутри проекта нет. Факторизация
+устранила завышение event-clock moments, но показала, что book-only latent gap не даёт
+out-of-sample directional gain и не идентифицирует $X$ с нужной точностью. Поэтому
+P7--P9 и P&L search не выполняются.
+
+Если работа с crypto signals возобновится, это должен быть отдельный проект на причинно
+наблюдаемых trades/depth/order-flow features или независимом price observation, с новым
+protocol, baseline ablations и untouched period. Такое продолжение не переименовывает
+negative result этого проекта и не является автоматическим P7.
