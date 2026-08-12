@@ -825,6 +825,7 @@ def evaluate_factorized_empirical_filter(
 ) -> MarkedEvaluationResult:
     if not torch.cuda.is_available():
         raise ExperimentError("EMP-MARK-FACT-001 requires an available CUDA device")
+    torch.use_deterministic_algorithms(True)
     started = time.perf_counter()
     values = spec.values
     evaluation = values["evaluation"]
