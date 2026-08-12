@@ -1985,15 +1985,31 @@ def evaluate_empirical_marked_filter(
     }
 
     inference_rows = primary_rows + calibration_rows + [noninferiority_row] + component_rows
-    write_csv(run_directory / "metrics" / "block_metrics.csv", list(block_rows[0]), block_rows)
+    write_csv(
+        run_directory / "metrics" / "block_metrics.csv",
+        _union_fieldnames(block_rows),
+        block_rows,
+    )
     write_csv(
         run_directory / "metrics" / "day_state.csv",
         _union_fieldnames(state_rows),
         state_rows,
     )
-    write_csv(run_directory / "tables" / "fold_parameters.csv", list(parameter_rows[0]), parameter_rows)
-    write_csv(run_directory / "tables" / "mark_diagnostics.csv", list(mark_rows[0]), mark_rows)
-    write_csv(run_directory / "tables" / "inference.csv", list(inference_rows[0]), inference_rows)
+    write_csv(
+        run_directory / "tables" / "fold_parameters.csv",
+        _union_fieldnames(parameter_rows),
+        parameter_rows,
+    )
+    write_csv(
+        run_directory / "tables" / "mark_diagnostics.csv",
+        _union_fieldnames(mark_rows),
+        mark_rows,
+    )
+    write_csv(
+        run_directory / "tables" / "inference.csv",
+        _union_fieldnames(inference_rows),
+        inference_rows,
+    )
     atomic_write_json(
         run_directory / "metrics" / "dependency_audit.json",
         {
