@@ -4,10 +4,12 @@
 >
 > **Ветка:** `feat/p6m-marked-filter`
 >
-> **Текущий статус:** P6C in progress; continuous-hazard refit/filter preregistered
+> **Текущий статус:** P6C completed; numerical refinement passed, empirical state
+> usability/calibration negative
 >
-> **Следующий шаг:** выполнить `EMP-MARK-CT-001`, проверить nested 4/8-substep
-> convergence и повторить causal calibration/uncertainty decisions. P7/P8 остаются blocked.
+> **Следующий шаг:** P7/P8 остаются blocked. Если empirical track продолжается,
+> preregister model redesign, который отделяет total event activity от directional mark
+> correction либо добавляет causal state observation; дополнительный hazard refinement не нужен.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -402,9 +404,9 @@ source TOML после запуска не переписывается под �
 | P5. Data feasibility и universe freeze | Empirical | **completed; passed** | Content-addressed OKX sample, quality/eligibility gate и immutable splits прошли |
 | P6. Causal efficient-price estimation | Empirical | **completed; negative feasibility** | Synthetic passed; exact six-event empirical filter failed uncertainty gate |
 | P6M. Marked multi-spread causal extension | Empirical | **completed; event layer supported, latent-state usability negative** | Full transition support and event score passed; uncertainty/calibration failed with adequate precision |
-| P6C. Continuous-hazard marked filter | Empirical | **in progress** | Endpoint event intensity, integrated survival, 4/8-substep equivalence and unchanged P6M scientific families |
-| P7. Event-driven backtester | Empirical | **blocked pending P6C** | Accounting, timestamp, fill, cost и latency tests |
-| P8. Nested development/validation | Empirical | **blocked pending P6C and absent P7** | Заморожена одна primary strategy и limited secondary set |
+| P6C. Continuous-hazard marked filter | Empirical | **completed; refinement passed, scientific result negative** | Endpoint/integrated likelihood valid; 4/8 equivalent; uncertainty/calibration failed |
+| P7. Event-driven backtester | Empirical | **blocked by negative P6C** | Accounting, timestamp, fill, cost и latency tests |
+| P8. Nested development/validation | Empirical | **blocked by negative P6C and absent P7** | Заморожена одна primary strategy и limited secondary set |
 | P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
 | P10. Synthesis/release | Common | pending | Plan, ADRs, reports, README и provenance согласованы |
 
@@ -993,7 +995,7 @@ likelihood baseline.
   P7 разрешён только после положительного P6M decision; переход из-за одного увеличения
   supported-transition fraction запрещён.
 
-### P6C. Continuous-hazard marked filter — in progress
+### P6C. Continuous-hazard marked filter — completed; negative
 
 P6C исправляет конкретное расхождение P6M с continuous-time law статьи, не меняя dataset,
 mark support или научные границы. Решение зафиксировано в
@@ -1019,6 +1021,20 @@ mark support или научные границы. Решение зафикси
 
 P6C приближает event clock к статье, но paper по-прежнему не задаёт empirical estimator:
 training conditioning на causal proxy остаётся явно отмеченной project approximation.
+
+Target run
+`EMP-MARK-CT-001/20260812T100151852237Z-c8a620999b93-det` выполнен с clean commit
+`6b2306e19eff55bba1d90033301a13b39bc5477a` за `126.13 s`. Все operational checks и
+nested 4/8-substep equivalence прошли. Fine-minus-primary means равны `0.0000713`
+nat/event для score, `-0.0000253` для rescaling и `0.000616` для uncertainty — на порядки
+внутри frozen margins.
+
+Scientific conclusion не изменился: log-score improvement `0.30398 nat/event` поддержан,
+но posterior SD/margin=`1.61985`, rescaling mean=`2.20883`, SD=`5.32993`. Continuous
+free-running rollout даёт 10 BBO events за `4.2255 s` против actual `14.7948 s`; midpoint
+MAE на horizon 10 `13.0478` хуже persistence `12.6651 USDT`. Полный provenance и сравнение:
+[`P6C report`](reports/p6c-continuous-hazard.md); решение:
+[`ADR-0018`](adr/0018-p6c-continuous-hazard-negative.md).
 
 ### P7. Event-driven backtest и accounting
 
@@ -1221,8 +1237,16 @@ provenance. Разные information-set modes не агрегируются б�
 
 ## 9. Ближайший исполняемый шаг
 
-Запустить committed `EMP-MARK-CT-001` на существующих rolling-origin dates. Сначала должны
-пройти operational invariants и nested 4/8-substep equivalence; затем интерпретируются
-неизменённые proper-score, calibration и uncertainty families. После target run сохранить
-report, result ADR, refitted December state и continuous-hazard several-event visualization.
-До этого P7/P8 и любой P&L search запрещены.
+P6C закончен. Он показал, что frozen-hazard approximation не была причиной отрицательного
+P6M: continuous fit/filter/rollout и 4→8 refinement дают тот же результат. P7/P8 и любой
+P&L search остаются запрещены.
+
+Следующее осмысленное направление, если проект продолжается, должно менять model boundary:
+
+1. отдельно моделировать total BBO activity $\Lambda_t$ и conditional mark probabilities,
+   чтобы directional signal не был обязан одновременно завышать event rate; либо
+2. добавить независимое causal наблюдение latent state и проверить его отдельной ablation.
+
+Перед реализацией требуется новый protocol/ADR и one-factor comparison с P6C. Простое
+увеличение числа seeds, ослабление uncertainty/calibration gates или дальнейшее дробление
+Brownian grid запрещено результатом numerical equivalence.

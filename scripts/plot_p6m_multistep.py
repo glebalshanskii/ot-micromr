@@ -28,6 +28,10 @@ from ot_micromr.marked_filter import (
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = REPOSITORY_ROOT / "cfg" / "experiments" / "emp_mark_filter_001.toml"
 REJECTION_ATTEMPTS = 64
+CONTINUOUS_CHUNK_SECONDS = 4.0
+CONTINUOUS_BRIDGE_DEPTH = 8
+CONTINUOUS_MAX_CHUNKS = 8
+CONTINUOUS_CROSSING_BISECTIONS = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +46,7 @@ class ExactTransitionCsr:
 
 def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Plot free-running several-event P6M forecasts from every held-out BBO point."
+        description="Plot free-running several-event marked-model forecasts from every held-out BBO point."
     )
     parser.add_argument("run_directory", type=Path)
     parser.add_argument("--start-utc", default="2024-12-15T00:00:00Z")
@@ -213,6 +217,226 @@ def _make_rollout_step(
     return torch.compile(step, mode=compile_mode, fullgraph=True)
 
 
+def _brownian_bridge_nodes(
+    start_x: torch.Tensor,
+    sigma_x: torch.Tensor,
+    duration: float,
+    depth: int,
+    normals: torch.Tensor,
+) -> torch.Tensor:
+    """Generate a dyadic Brownian path conditional on its sampled endpoint."""
+    endpoint = start_x + sigma_x * math.sqrt(duration) * normals[..., 0]
+    nodes = torch.stack((start_x, endpoint), dim=-1)
+    normal_offset = 1
+    for level in range(depth):
+        segment_count = 1 << level
+        segment_duration = duration / float(segment_count)
+        midpoint = 0.5 * (nodes[..., :-1] + nodes[..., 1:])
+        midpoint = midpoint + sigma_x * math.sqrt(segment_duration / 4.0) * normals[
+            ..., normal_offset : normal_offset + segment_count
+        ]
+        interleaved = torch.empty(
+            (*nodes.shape[:-1], nodes.shape[-1] + midpoint.shape[-1]),
+            device=nodes.device,
+            dtype=nodes.dtype,
+        )
+        interleaved[..., 0::2] = nodes
+        interleaved[..., 1::2] = midpoint
+        nodes = interleaved
+        normal_offset += segment_count
+    return nodes
+
+
+def _linear_gap_hazard(
+    gap_start: torch.Tensor,
+    gap_end: torch.Tensor,
+    duration: torch.Tensor | float,
+    base_rate: torch.Tensor,
+    alpha: torch.Tensor,
+    correction_down: torch.Tensor,
+    correction_up: torch.Tensor,
+) -> torch.Tensor:
+    """Exact hazard on a linearly interpolated Brownian-bridge leaf."""
+    primitive_start = 0.5 * correction_down * torch.square(torch.clamp_min(gap_start, 0.0))
+    primitive_start = primitive_start - 0.5 * correction_up * torch.square(
+        torch.clamp_min(-gap_start, 0.0)
+    )
+    primitive_end = 0.5 * correction_down * torch.square(torch.clamp_min(gap_end, 0.0))
+    primitive_end = primitive_end - 0.5 * correction_up * torch.square(
+        torch.clamp_min(-gap_end, 0.0)
+    )
+    delta = gap_end - gap_start
+    nonconstant = torch.abs(delta) > 1e-7
+    safe_delta = torch.where(nonconstant, delta, torch.ones_like(delta))
+    average_correction = torch.where(
+        nonconstant,
+        (primitive_end - primitive_start) / safe_delta,
+        torch.where(gap_start >= 0.0, correction_down * gap_start, -correction_up * gap_start),
+    )
+    return duration * (base_rate + alpha * average_correction)
+
+
+def _make_continuous_wait_chunk(compile_mode: str):
+    leaf_count = 1 << CONTINUOUS_BRIDGE_DEPTH
+    leaf_duration = CONTINUOUS_CHUNK_SECONDS / leaf_count
+
+    def wait_chunk(
+        bid_ticks: torch.Tensor,
+        ask_ticks: torch.Tensor,
+        efficient_price: torch.Tensor,
+        remaining_threshold: torch.Tensor,
+        bridge_normals: torch.Tensor,
+        rates: torch.Tensor,
+        alpha: torch.Tensor,
+        sigma_x: torch.Tensor,
+        correction_down: torch.Tensor,
+        correction_up: torch.Tensor,
+    ) -> tuple[torch.Tensor, ...]:
+        spread_bucket = torch.clamp(ask_ticks - bid_ticks, min=1, max=8) - 1
+        midpoint = (bid_ticks + ask_ticks).to(torch.float32) * 0.05
+        x_path = _brownian_bridge_nodes(
+            efficient_price,
+            sigma_x,
+            CONTINUOUS_CHUNK_SECONDS,
+            CONTINUOUS_BRIDGE_DEPTH,
+            bridge_normals,
+        )
+        gap_path = midpoint.unsqueeze(-1) - x_path
+        base = rates[spread_bucket].unsqueeze(-1)
+        down = correction_down[spread_bucket].unsqueeze(-1)
+        up = correction_up[spread_bucket].unsqueeze(-1)
+        leaf_hazard = _linear_gap_hazard(
+            gap_path[..., :-1],
+            gap_path[..., 1:],
+            leaf_duration,
+            base,
+            alpha,
+            down,
+            up,
+        )
+        cumulative = torch.cumsum(leaf_hazard, dim=-1).contiguous()
+        hit = cumulative[..., -1] >= remaining_threshold
+        leaf = torch.searchsorted(
+            cumulative,
+            remaining_threshold.unsqueeze(-1),
+            right=False,
+        ).squeeze(-1)
+        leaf = torch.clamp(leaf, 0, leaf_count - 1)
+        previous_leaf = torch.clamp_min(leaf - 1, 0)
+        before = torch.gather(cumulative, -1, previous_leaf.unsqueeze(-1)).squeeze(-1)
+        before = torch.where(leaf > 0, before, torch.zeros_like(before))
+        remaining_leaf = torch.clamp_min(remaining_threshold - before, 0.0)
+        gap_start = torch.gather(gap_path, -1, leaf.unsqueeze(-1)).squeeze(-1)
+        gap_end = torch.gather(gap_path, -1, (leaf + 1).unsqueeze(-1)).squeeze(-1)
+        x_start = torch.gather(x_path, -1, leaf.unsqueeze(-1)).squeeze(-1)
+        x_end = torch.gather(x_path, -1, (leaf + 1).unsqueeze(-1)).squeeze(-1)
+        fraction_low = torch.zeros_like(remaining_threshold)
+        fraction_high = torch.ones_like(remaining_threshold)
+        selected_base = rates[spread_bucket]
+        selected_down = correction_down[spread_bucket]
+        selected_up = correction_up[spread_bucket]
+        for _ in range(CONTINUOUS_CROSSING_BISECTIONS):
+            fraction = 0.5 * (fraction_low + fraction_high)
+            partial_gap = gap_start + fraction * (gap_end - gap_start)
+            partial_hazard = _linear_gap_hazard(
+                gap_start,
+                partial_gap,
+                leaf_duration * fraction,
+                selected_base,
+                alpha,
+                selected_down,
+                selected_up,
+            )
+            left = partial_hazard < remaining_leaf
+            fraction_low = torch.where(left, fraction, fraction_low)
+            fraction_high = torch.where(left, fraction_high, fraction)
+        fraction = 0.5 * (fraction_low + fraction_high)
+        event_x = x_start + fraction * (x_end - x_start)
+        event_time = (leaf.to(torch.float32) + fraction) * leaf_duration
+        return (
+            hit,
+            event_x,
+            event_time,
+            x_path[..., -1],
+            torch.clamp_min(remaining_threshold - cumulative[..., -1], 0.0),
+        )
+
+    return torch.compile(wait_chunk, mode=compile_mode, fullgraph=True)
+
+
+def _make_mark_decoder_step(
+    compile_mode: str, rejection_attempts: int = REJECTION_ATTEMPTS
+):
+    def decode(
+        bid_ticks: torch.Tensor,
+        ask_ticks: torch.Tensor,
+        efficient_price: torch.Tensor,
+        mark_uniform: torch.Tensor,
+        raw_uniform: torch.Tensor,
+        probabilities: torch.Tensor,
+        correction: torch.Tensor,
+        rates: torch.Tensor,
+        alpha: torch.Tensor,
+        direction: torch.Tensor,
+        observed_cells: torch.Tensor,
+        raw_order: torch.Tensor,
+        raw_offsets: torch.Tensor,
+        raw_counts: torch.Tensor,
+        raw_delta_bid: torch.Tensor,
+        raw_delta_ask: torch.Tensor,
+    ) -> tuple[torch.Tensor, ...]:
+        shape = bid_ticks.shape
+        flat_bid = bid_ticks.reshape(-1)
+        flat_ask = ask_ticks.reshape(-1)
+        flat_x = efficient_price.reshape(-1)
+        spread_ticks = flat_ask - flat_bid
+        spread_bucket = torch.clamp(spread_ticks, min=1, max=8) - 1
+        midpoint = (flat_bid + flat_ask).to(torch.float32) * 0.05
+        gap = midpoint - flat_x
+        directional_gap = torch.where(
+            direction.unsqueeze(0) > 0,
+            torch.clamp_min(-gap.unsqueeze(1), 0.0),
+            torch.where(
+                direction.unsqueeze(0) < 0,
+                torch.clamp_min(gap.unsqueeze(1), 0.0),
+                torch.zeros_like(gap).unsqueeze(1),
+            ),
+        )
+        intensity = rates[spread_bucket].unsqueeze(1) * probabilities[spread_bucket]
+        intensity = intensity + alpha * correction[spread_bucket] * directional_gap
+        intensity = intensity * observed_cells[spread_bucket]
+        cumulative = torch.cumsum(intensity, dim=1).contiguous()
+        total = cumulative[:, -1]
+        thresholds = (
+            mark_uniform.reshape(rejection_attempts, -1).T * total.unsqueeze(1)
+        ).contiguous()
+        candidate_mark = torch.searchsorted(cumulative, thresholds, right=False).T
+        candidate_mark = torch.clamp_max(candidate_mark, MARK_COUNT - 1)
+        candidate_cell = spread_bucket.unsqueeze(0) * MARK_COUNT + candidate_mark
+        count = raw_counts[candidate_cell]
+        rank = torch.floor(raw_uniform.reshape(rejection_attempts, -1) * count).to(torch.int64)
+        rank = torch.minimum(torch.clamp_min(rank, 0), torch.clamp_min(count - 1, 0))
+        transition_index = raw_order[raw_offsets[candidate_cell] + rank]
+        candidate_bid_delta = raw_delta_bid[transition_index]
+        candidate_ask_delta = raw_delta_ask[transition_index]
+        candidate_spread = spread_ticks.unsqueeze(0) + candidate_ask_delta - candidate_bid_delta
+        valid = candidate_spread > 0
+        any_valid = torch.any(valid, dim=0)
+        first_valid = torch.argmax(valid.to(torch.int64), dim=0)
+        gather = first_valid.unsqueeze(0)
+        bid_delta = torch.gather(candidate_bid_delta, 0, gather).squeeze(0)
+        ask_delta = torch.gather(candidate_ask_delta, 0, gather).squeeze(0)
+        bid_delta = torch.where(any_valid, bid_delta, torch.zeros_like(bid_delta))
+        ask_delta = torch.where(any_valid, ask_delta, torch.zeros_like(ask_delta))
+        return (
+            (flat_bid + bid_delta).reshape(shape),
+            (flat_ask + ask_delta).reshape(shape),
+            torch.count_nonzero(~any_valid),
+        )
+
+    return torch.compile(decode, mode=compile_mode, fullgraph=True)
+
+
 def _rollout(
     *,
     origins: torch.Tensor,
@@ -307,6 +531,153 @@ def _rollout(
     }, fallback_count
 
 
+def _rollout_continuous(
+    *,
+    origins: torch.Tensor,
+    bid_ticks: torch.Tensor,
+    ask_ticks: torch.Tensor,
+    state_mean: torch.Tensor,
+    state_variance: torch.Tensor,
+    probabilities: torch.Tensor,
+    correction: torch.Tensor,
+    rates: torch.Tensor,
+    alpha: torch.Tensor,
+    sigma_x: torch.Tensor,
+    transitions: ExactTransitionCsr,
+    horizon: int,
+    paths: int,
+    seed: int,
+    compile_mode: str,
+) -> tuple[dict[str, torch.Tensor], int]:
+    device = bid_ticks.device
+    origin_count = origins.numel()
+    generator = torch.Generator(device=device).manual_seed(seed)
+    current_bid = bid_ticks[origins].unsqueeze(1).expand(-1, paths).clone()
+    current_ask = ask_ticks[origins].unsqueeze(1).expand(-1, paths).clone()
+    current_x = state_mean[origins].unsqueeze(1) + torch.sqrt(
+        torch.clamp_min(state_variance[origins], 1e-12)
+    ).unsqueeze(1) * torch.randn(
+        (origin_count, paths), device=device, dtype=torch.float32, generator=generator
+    )
+    bids = [current_bid]
+    asks = [current_ask]
+    event_times = [torch.zeros((origin_count, paths), device=device, dtype=torch.float32)]
+    direction = mark_metadata(device)[0]
+    supported = transitions.observed_cells
+    clock_rates = rates * torch.sum(probabilities * supported, dim=-1)
+    clock_correction_down = torch.sum(
+        correction * supported * (direction < 0).unsqueeze(0), dim=-1
+    )
+    clock_correction_up = torch.sum(
+        correction * supported * (direction > 0).unsqueeze(0), dim=-1
+    )
+    wait_chunk = _make_continuous_wait_chunk(compile_mode)
+    decode = _make_mark_decoder_step(compile_mode)
+    fallback_count = 0
+    unresolved_total = 0
+    bridge_normal_count = 1 << CONTINUOUS_BRIDGE_DEPTH
+    for _ in range(horizon):
+        threshold = -torch.log(
+            torch.clamp_min(
+                torch.rand(
+                    (origin_count, paths), device=device, dtype=torch.float32, generator=generator
+                ),
+                1e-7,
+            )
+        )
+        waiting_time = torch.zeros_like(threshold)
+        active = torch.ones_like(threshold, dtype=torch.bool)
+        event_x = current_x.clone()
+        path_x = current_x
+        for _ in range(CONTINUOUS_MAX_CHUNKS):
+            torch.compiler.cudagraph_mark_step_begin()
+            bridge_normals = torch.randn(
+                (origin_count, paths, bridge_normal_count),
+                device=device,
+                dtype=torch.float32,
+                generator=generator,
+            )
+            hit, candidate_x, candidate_time, chunk_end_x, remaining = wait_chunk(
+                current_bid,
+                current_ask,
+                path_x,
+                threshold,
+                bridge_normals,
+                clock_rates,
+                alpha,
+                sigma_x,
+                clock_correction_down,
+                clock_correction_up,
+            )
+            new_hit = active & hit
+            event_x = torch.where(new_hit, candidate_x, event_x)
+            waiting_time = torch.where(
+                new_hit,
+                waiting_time + candidate_time,
+                torch.where(active, waiting_time + CONTINUOUS_CHUNK_SECONDS, waiting_time),
+            )
+            path_x = torch.where(active & ~hit, chunk_end_x, path_x)
+            threshold = torch.where(active & ~hit, remaining, threshold)
+            active = active & ~hit
+            if not bool(torch.any(active)):
+                break
+        unresolved = int(torch.count_nonzero(active))
+        unresolved_total += unresolved
+        if unresolved:
+            event_x = torch.where(active, path_x, event_x)
+        random_shape = (REJECTION_ATTEMPTS, origin_count, paths)
+        mark_uniform = torch.rand(random_shape, device=device, generator=generator)
+        raw_uniform = torch.rand(random_shape, device=device, generator=generator)
+        torch.compiler.cudagraph_mark_step_begin()
+        current_bid, current_ask, fallbacks = decode(
+            current_bid,
+            current_ask,
+            event_x,
+            mark_uniform,
+            raw_uniform,
+            probabilities,
+            correction,
+            rates,
+            alpha,
+            direction,
+            transitions.observed_cells,
+            transitions.order,
+            transitions.offsets,
+            transitions.counts,
+            transitions.delta_bid,
+            transitions.delta_ask,
+        )
+        current_bid = current_bid.clone()
+        current_ask = current_ask.clone()
+        current_x = event_x.clone()
+        waiting_time = waiting_time.clone()
+        bids.append(current_bid)
+        asks.append(current_ask)
+        event_times.append(event_times[-1] + waiting_time)
+        fallback_count += int(fallbacks)
+    bid_tick_path = torch.stack(bids, dim=1)
+    ask_tick_path = torch.stack(asks, dim=1)
+    minimum_spread_ticks = torch.min(ask_tick_path - bid_tick_path)
+    bid_path = bid_tick_path.to(torch.float32) * 0.1
+    ask_path = ask_tick_path.to(torch.float32) * 0.1
+    midpoint_path = 0.5 * (bid_path + ask_path)
+    time_path = torch.stack(event_times, dim=1)
+    return {
+        "bid_mean": bid_path.mean(dim=2),
+        "ask_mean": ask_path.mean(dim=2),
+        "midpoint_mean": midpoint_path.mean(dim=2),
+        "bid_q10": torch.quantile(bid_path, 0.1, dim=2),
+        "bid_q90": torch.quantile(bid_path, 0.9, dim=2),
+        "ask_q10": torch.quantile(ask_path, 0.1, dim=2),
+        "ask_q90": torch.quantile(ask_path, 0.9, dim=2),
+        "midpoint_q10": torch.quantile(midpoint_path, 0.1, dim=2),
+        "midpoint_q90": torch.quantile(midpoint_path, 0.9, dim=2),
+        "model_event_time_mean_seconds": time_path.mean(dim=2),
+        "minimum_simulated_spread_ticks": minimum_spread_ticks,
+        "unresolved_hazard_thresholds": unresolved_total,
+    }, fallback_count
+
+
 def _forecast(
     config_path: Path,
     run_directory: Path,
@@ -341,23 +712,25 @@ def _forecast(
     )
     if origins.numel() == 0:
         raise RuntimeError("plot window has no origin with a complete healthy forecast horizon")
-    paths_out, fallback_count = _rollout(
-        origins=origins,
-        bid_ticks=day.bid_ticks,
-        ask_ticks=day.ask_ticks,
-        state_mean=state["filtered_efficient_price"].to(device),
-        state_variance=state["posterior_variance"].to(device),
-        probabilities=probabilities,
-        correction=correction,
-        rates=rates,
-        alpha=alpha,
-        sigma_x=sigma_x,
-        transitions=transitions,
-        horizon=horizon,
-        paths=paths,
-        seed=seed,
-        compile_mode=str(spec.values["numerics"]["compile_mode"]),
-    )
+    rollout = _rollout_continuous if spec.experiment_id == "EMP-MARK-CT-001" else _rollout
+    rollout_arguments: dict[str, Any] = {
+        "origins": origins,
+        "bid_ticks": day.bid_ticks,
+        "ask_ticks": day.ask_ticks,
+        "state_mean": state["filtered_efficient_price"].to(device),
+        "state_variance": state["posterior_variance"].to(device),
+        "probabilities": probabilities,
+        "correction": correction,
+        "rates": rates,
+        "alpha": alpha,
+        "sigma_x": sigma_x,
+        "transitions": transitions,
+        "horizon": horizon,
+        "paths": paths,
+        "seed": seed,
+        "compile_mode": str(spec.values["numerics"]["compile_mode"]),
+    }
+    paths_out, fallback_count = rollout(**rollout_arguments)
     horizon_index = torch.arange(horizon + 1, device=device).unsqueeze(0)
     actual_index = origins.unsqueeze(1) + horizon_index
     actual_bid = day.bid_ticks[actual_index].to(torch.float32) * 0.1
@@ -373,6 +746,12 @@ def _forecast(
         "future_timestamp_accesses": future_accesses,
         "rejection_fallback_count": fallback_count,
         "minimum_simulated_spread_ticks": int(paths_out["minimum_simulated_spread_ticks"]),
+        "hazard_clock": (
+            "continuous_brownian_bridge_integrated"
+            if spec.experiment_id == "EMP-MARK-CT-001"
+            else "frozen_endpoint_exponential"
+        ),
+        "unresolved_hazard_thresholds": int(paths_out.get("unresolved_hazard_thresholds", 0)),
     }
     horizon_rows = []
     for step_index in range(1, horizon + 1):
@@ -409,6 +788,7 @@ def _forecast(
         "train_dates": train_dates,
         "parameter_digest_sha256": parameter_digest,
         "state_path": state_path,
+        "experiment_id": spec.experiment_id,
     }
 
 
@@ -457,7 +837,7 @@ def _render_trajectories(result: dict[str, Any], path: Path, start_text: str) ->
     axes[-1].set_xlabel("Seconds after window start; forecast values do not use future BBO")
     metrics = result["metrics"]
     figure.suptitle(
-        "P6M free-running forecasts from every held-out BBO point\n"
+        f"{result['experiment_id']} free-running forecasts from every held-out BBO point\n"
         f"{start_text}; {metrics['origin_count']} origins x {metrics['paths_per_origin']} paths; "
         f"midpoint MAE model/persistence: h=1 "
         f"{metrics['midpoint_h1_model_mae_usdt']:.3f}/"
@@ -474,7 +854,9 @@ def _render_trajectories(result: dict[str, Any], path: Path, start_text: str) ->
     plt.close(figure)
 
 
-def _render_horizon_errors(rows: list[dict[str, Any]], path: Path) -> None:
+def _render_horizon_errors(
+    rows: list[dict[str, Any]], path: Path, model_label: str
+) -> None:
     horizon = torch.tensor([row["horizon_events"] for row in rows])
     figure, axes = plt.subplots(1, 3, figsize=(16, 5), sharex=True, constrained_layout=True)
     for axis, name, title in zip(
@@ -482,7 +864,7 @@ def _render_horizon_errors(rows: list[dict[str, Any]], path: Path) -> None:
     ):
         model = torch.tensor([row[f"{name}_model_mae_usdt"] for row in rows])
         persistence = torch.tensor([row[f"{name}_persistence_mae_usdt"] for row in rows])
-        axis.plot(horizon, model, marker="o", color="#ea580c", label="P6M rollout")
+        axis.plot(horizon, model, marker="o", color="#ea580c", label=model_label)
         axis.plot(horizon, persistence, marker="o", color="#64748b", label="Persistence")
         axis.set_title(title)
         axis.set_xlabel("Forecast horizon, BBO events")
@@ -505,7 +887,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_directory = (
             REPOSITORY_ROOT
             / "outputs"
-            / "P6M-MULTISTEP-VIZ"
+            / (
+                "P6C-MULTISTEP-VIZ"
+                if arguments.config.resolve().name == "emp_mark_ct_001.toml"
+                else "P6M-MULTISTEP-VIZ"
+            )
             / (
                 f"{start.strftime('%Y%m%dT%H%M%SZ')}-{arguments.window_minutes}min-"
                 f"h{arguments.horizon_events}-p{arguments.paths}"
@@ -525,7 +911,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     trajectory_path = output_directory / "multistep-trajectories.png"
     error_path = output_directory / "horizon-mae.png"
     _render_trajectories(result, trajectory_path, arguments.start_utc)
-    _render_horizon_errors(result["horizon_rows"], error_path)
+    _render_horizon_errors(
+        result["horizon_rows"], error_path, f"{result['experiment_id']} rollout"
+    )
     write_csv(
         output_directory / "horizon-metrics.csv",
         list(result["horizon_rows"][0]),
@@ -534,12 +922,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     atomic_write_json(
         output_directory / "provenance.json",
         {
-            "schema_version": "p6m-multistep-visualization-v1",
+            "schema_version": (
+                "p6c-multistep-visualization-v1"
+                if result["experiment_id"] == "EMP-MARK-CT-001"
+                else "p6m-multistep-visualization-v1"
+            ),
             "role": "descriptive_only_not_an_acceptance_artifact",
             "forecast": "free-running Monte Carlo event-index rollout from each causal posterior",
             "initial_latent_state": "Gaussian moment approximation from persisted causal posterior mean and variance",
             "horizontal_alignment": "each rollout starts at the real origin timestamp and advances by model-expected event times; realized future timestamps are used only for error evaluation",
             "raw_transition_decoder": "train-only exact deltas conditional on spread bucket and symmetrized mark; positive-spread rejection",
+            "hazard_clock": result["metrics"]["hazard_clock"],
+            "continuous_clock_numerics": (
+                {
+                    "chunk_seconds": CONTINUOUS_CHUNK_SECONDS,
+                    "brownian_bridge_depth": CONTINUOUS_BRIDGE_DEPTH,
+                    "leaf_seconds": CONTINUOUS_CHUNK_SECONDS
+                    / float(1 << CONTINUOUS_BRIDGE_DEPTH),
+                    "crossing_bisections": CONTINUOUS_CROSSING_BISECTIONS,
+                    "maximum_chunks": CONTINUOUS_MAX_CHUNKS,
+                }
+                if result["experiment_id"] == "EMP-MARK-CT-001"
+                else None
+            ),
             "date": result["date"],
             "start_utc": arguments.start_utc,
             "window_minutes": arguments.window_minutes,
