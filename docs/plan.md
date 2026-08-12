@@ -810,14 +810,19 @@ Stop/gate P6:
   $\theta-(\phi+c)$ и signal не превосходит controls, P&L optimization останавливается
   и результат фиксируется как negative feasibility finding.
 
-Результат P6: **completed / negative empirical feasibility**. `EMP-FILTER-001` выполнен
-из clean commit `06b5053` за `165.99 s`. Все operational gates прошли, включая zero
+Результат P6: **completed / negative empirical feasibility**. Final `EMP-FILTER-001`
+выполнен из clean commit `cd5aabf` за `155.51 s`. Все operational gates прошли, включая zero
 future access и bitwise CUDA replay, но median posterior SD `2.80863 USDT` оказался в
 `2.759` раза выше optimistic option margin `1.01787 USDT`. PF почти не улучшил RMSE к
 causal spot reference относительно current mid (`5.65e-6` relative). Balanced model
 сохранён: lower bound OOS advantage unbalanced model `3.83e-7 nat/event` не достигает
 `0.01`. По stop rule P7/P8 не начинаются. Полный provenance и ограничения:
 [`p6-causal-efficient-price.md`](reports/p6-causal-efficient-price.md).
+
+Additional diagnostics согласуются с остановкой: unbalanced information condition number
+`1.90e7`, его `alpha_c` не идентифицирован; fit-day observed drift slopes положительны в
+tight/open states при отрицательном fitted mean-reversion slope. Это model mismatch, а не
+проблема только одного uncertainty threshold.
 
 ### P7. Event-driven backtest и accounting
 

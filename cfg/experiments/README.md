@@ -16,7 +16,7 @@ config.
 | `SIM-FIG4-002` | `sim_fig4_002.toml` | Powered Figure 4 reconstruction on the current CPU/CUDA implementation | operationally passed; scientific family inconclusive |
 | `EMP-DATA-001` | `emp_data_001.toml` | OKX raw integrity, large-tick eligibility and chronological split freeze | passed; `20260811T232210534423Z-45f5a299b7ff-det` |
 | `FILTER-SYN-001` | `filter_syn_001.toml` | Causal six-event particle-filter identification against naive/Kalman controls | passed; `20260811T234700354892Z-9e7f2939b506-det` |
-| `EMP-FILTER-001` | `emp_filter_001.toml` | Train-only OKX parameter fit and causal filter diagnostics | completed negative; `20260811T235854474663Z-7075bc32601b-det` |
+| `EMP-FILTER-001` | `emp_filter_001.toml` | Train-only OKX parameter fit and causal filter diagnostics | completed negative; `20260812T000514761846Z-7075bc32601b-det` |
 
 `emp_data_001_sources.toml` is the strict acquisition contract for the P5 target. It contains
 only official OKX URLs selected from train dates. Acquisition is always explicit:

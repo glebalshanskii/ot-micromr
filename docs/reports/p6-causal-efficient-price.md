@@ -22,13 +22,13 @@ Orders, fills, trading thresholds и P&L в P6 не рассчитывались
 | Leg | Run | Clean commit | Status | Runtime |
 |---|---|---|---:|---:|
 | Synthetic | `FILTER-SYN-001/20260811T234700354892Z-9e7f2939b506-det` | `4cf3212` | passed | `64.60 s` |
-| Empirical | `EMP-FILTER-001/20260811T235854474663Z-7075bc32601b-det` | `06b5053` | negative gate | `165.99 s` |
+| Empirical | `EMP-FILTER-001/20260812T000514761846Z-7075bc32601b-det` | `cd5aabf` | negative gate | `155.51 s` |
 
 Оба run выполнены на NVIDIA GeForce RTX 3080 Ti Laptop GPU, PyTorch `2.13.0+cu130`,
 Python `3.14.0`. Tensor state использовал CUDA `float32`, final reductions — PyTorch
 `float64`; compiled mode — `reduce-overhead`. Empirical extraction использовал 10 независимых
 CPU workers и проверил все `70,455,943` frozen L2 source rows. Manifest SHA-256 empirical
-run: `9092a588b836921c90c99817cf3650953b3fe958e894a104cb0ba5d707299edb`.
+run: `b7c639e49ca49bbb542485341eedb5071b8e515d7d9f061c5aeb7fafed536bc5`.
 
 ## Synthetic identification
 
@@ -69,6 +69,13 @@ Unbalanced final NLL отличался менее чем на `1.3e-7 nat/event
 selection lower bound был только `3.83e-7 nat/event`, далеко ниже minimum
 `0.01 nat/event`. Поэтому по parsimony был заморожен balanced model.
 
+Observed-information standard errors показывают слабую идентификацию ramp terms:
+balanced `alpha_s=(2.59 +/- 2.64)e-5`, `alpha_o=(3.24 +/- 1.23)e-5` и
+`alpha_c=(8.42 +/- 5.42)e-5`. Condition number balanced information matrix равен
+`2.61e4`. Для unbalanced model condition number возрастает до `1.90e7`, а
+`alpha_c=(1.14e-5 +/- 5.29e-4)` практически не идентифицирован. Эти standard errors
+условны на point-process specification и не являются robust market-distribution intervals.
+
 ## Empirical diagnostics and gate
 
 | Metric | Result | Interpretation |
@@ -82,6 +89,13 @@ selection lower bound был только `3.83e-7 nat/event`, далеко ни
 | PF RMSE to causal spot reference | `9.12175 USDT` | descriptive, spot is not ground truth |
 | Current-mid RMSE to same reference | `9.12180 USDT` | PF relative improvement only `5.65e-6` |
 | Reference coverage by PF 90% interval | `55.22%` | descriptive severe miscalibration under domain shift |
+
+Parity-specific compensator check также противоречит fitted mean reversion. На fit day
+observed zero-intercept drift slopes равны `+0.00139 s^-1` для tight и `+0.07945 s^-1`
+для open state, тогда как balanced fit требует `-0.0000842 s^-1` в обоих. Fit-day
+time-rescaling mean близок к единице (`1.0003`), но standard deviation `2.0856` вместо
+unit-exponential benchmark `1`; это descriptive evidence overdispersion/model mismatch,
+не отдельный acceptance test.
 
 Все operational checks прошли: finite state, strictly positive variance, frozen model,
 exact replay и wall-time limit. Единственный failed gate — uncertainty below option margin.
