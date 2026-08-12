@@ -401,7 +401,7 @@ def _empirical_interval_nll(
 
 def _fit_point_process(
     spec: RunSpec, day: DayData, balanced: bool
-) -> tuple[dict[str, float], float, float]:
+) -> tuple[dict[str, float], dict[str, float], float, float, float]:
     gap, tight, events, dt, _ = _likelihood_inputs(day)
     if events.numel() < 100:
         raise ExperimentError(f"too few compatible events on {day.date}")
@@ -453,10 +453,24 @@ def _fit_point_process(
     if not bool(torch.all(torch.isfinite(final_parameters))) or not math.isfinite(final_loss):
         raise ExperimentError("non-finite point-process fit")
     names = ("mu_s", "mu_o", "mu_c", "alpha_s", "alpha_o", "alpha_c")
+    raw_at_optimum = raw.detach()
+    hessian = torch.autograd.functional.hessian(loss_function, raw_at_optimum, vectorize=True)
+    information = 0.5 * (hessian + hessian.T) * events.numel()
+    covariance_raw = torch.linalg.pinv(information, hermitian=True)
+    jacobian = torch.autograd.functional.jacobian(
+        lambda value: _positive_parameters(value, balanced),
+        raw_at_optimum,
+        vectorize=True,
+    )
+    covariance_parameters = jacobian @ covariance_raw @ jacobian.T
+    standard_errors = torch.sqrt(torch.clamp_min(torch.diag(covariance_parameters), 0.0))
+    information_condition_number = float(torch.linalg.cond(information))
     return (
         {name: float(value) for name, value in zip(names, final_parameters, strict=True)},
+        {name: float(value) for name, value in zip(names, standard_errors, strict=True)},
         initial_loss,
         final_loss,
+        information_condition_number,
     )
 
 
@@ -802,6 +816,21 @@ def _channel_and_day_diagnostics(
         "gap_first_half_standard_deviation_usdt": float(gap_all[:split].std(unbiased=True)),
         "gap_second_half_standard_deviation_usdt": float(gap_all[split:].std(unbiased=True)),
     }
+    jump_values = gap.new_tensor((0.1, -0.1, 0.05, -0.05, 0.05, -0.05))
+    observed_jumps = jump_values[events - 1]
+    for label, parity_mask, expected_slope in (
+        ("tight", tight, -(2.0 * alpha_s + alpha_o)),
+        ("open", ~tight, -alpha_c),
+    ):
+        denominator = torch.sum(torch.square(gap[parity_mask]) * dt[parity_mask]).clamp_min(
+            1e-12
+        )
+        observed_slope = torch.sum(gap[parity_mask] * observed_jumps[parity_mask]) / denominator
+        diagnostics[f"{label}_observed_drift_slope_per_second"] = float(observed_slope)
+        diagnostics[f"{label}_fitted_drift_slope_per_second"] = float(expected_slope)
+        diagnostics[f"{label}_drift_slope_residual_per_second"] = float(
+            observed_slope - expected_slope
+        )
     return rows, diagnostics
 
 
@@ -817,10 +846,22 @@ def evaluate_empirical_filter(spec: RunSpec, run_directory: Path) -> EmpiricalFi
     fit_day = days[str(evaluation["fit_date"])]
     selection_day = days[str(evaluation["selection_date"])]
     audit_day = days[str(evaluation["audit_date"])]
-    balanced, balanced_initial_nll, balanced_final_nll = _fit_point_process(
+    (
+        balanced,
+        balanced_standard_errors,
+        balanced_initial_nll,
+        balanced_final_nll,
+        balanced_information_condition,
+    ) = _fit_point_process(
         spec, fit_day, True
     )
-    unbalanced, unbalanced_initial_nll, unbalanced_final_nll = _fit_point_process(
+    (
+        unbalanced,
+        unbalanced_standard_errors,
+        unbalanced_initial_nll,
+        unbalanced_final_nll,
+        unbalanced_information_condition,
+    ) = _fit_point_process(
         spec, fit_day, False
     )
     selection_rows, selection_lower, selected_model = _selection_blocks(
@@ -927,6 +968,8 @@ def evaluate_empirical_filter(spec: RunSpec, run_directory: Path) -> EmpiricalFi
         "fit_balanced_nll_final": balanced_final_nll,
         "fit_unbalanced_nll_initial": unbalanced_initial_nll,
         "fit_unbalanced_nll_final": unbalanced_final_nll,
+        "fit_balanced_information_condition_number": balanced_information_condition,
+        "fit_unbalanced_information_condition_number": unbalanced_information_condition,
         "future_timestamp_accesses": future_accesses,
         "deterministic_replay": deterministic_replay,
         "filter_digest_sha256": first_digest,
@@ -944,9 +987,21 @@ def evaluate_empirical_filter(spec: RunSpec, run_directory: Path) -> EmpiricalFi
     }
 
     parameter_rows: list[dict[str, Any]] = []
-    for model_name, parameters, initial_nll, final_nll in (
-        ("balanced", balanced, balanced_initial_nll, balanced_final_nll),
-        ("unbalanced", unbalanced, unbalanced_initial_nll, unbalanced_final_nll),
+    for model_name, parameters, standard_errors, initial_nll, final_nll in (
+        (
+            "balanced",
+            balanced,
+            balanced_standard_errors,
+            balanced_initial_nll,
+            balanced_final_nll,
+        ),
+        (
+            "unbalanced",
+            unbalanced,
+            unbalanced_standard_errors,
+            unbalanced_initial_nll,
+            unbalanced_final_nll,
+        ),
     ):
         for name, value in parameters.items():
             parameter_rows.append(
@@ -955,6 +1010,7 @@ def evaluate_empirical_filter(spec: RunSpec, run_directory: Path) -> EmpiricalFi
                     "selected": model_name == selected_model,
                     "parameter": name,
                     "value": value,
+                    "model_based_standard_error": standard_errors[name],
                     "fit_initial_nll_nat_per_event": initial_nll,
                     "fit_final_nll_nat_per_event": final_nll,
                 }
@@ -966,6 +1022,7 @@ def evaluate_empirical_filter(spec: RunSpec, run_directory: Path) -> EmpiricalFi
                 "selected": True,
                 "parameter": name,
                 "value": value,
+                "model_based_standard_error": "",
                 "fit_initial_nll_nat_per_event": "",
                 "fit_final_nll_nat_per_event": "",
             }

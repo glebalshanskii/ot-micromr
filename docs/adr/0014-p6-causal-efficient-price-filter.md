@@ -62,3 +62,12 @@ CPU boundary и parallelized по независимым days. Отдельны�
 - P6 может завершиться `negative` или `inconclusive`; это блокирует P7/P8 P&L search, но не
   меняет P5 или synthetic paper reproduction.
 - P6 не выбирает trading threshold, fees, latency или execution variant.
+
+## Outcome — 2026-08-12
+
+`FILTER-SYN-001` прошёл state-error, predictive-likelihood, calibration и replay gates.
+`EMP-FILTER-001` прошёл operational gates, но median posterior SD `2.80863 USDT` превысил
+optimistic option margin `1.01787 USDT` в `2.759` раза. P6 поэтому завершён как negative
+empirical feasibility result. P7/P8 для book-only estimator остановлены; возможный
+same-venue spot measurement update является новым preregistered P6 extension, а не
+переписыванием выполненного protocol.

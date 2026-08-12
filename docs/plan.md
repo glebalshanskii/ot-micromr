@@ -6,7 +6,8 @@
 >
 > **Текущий статус:** P5 completed/passed; P6 in progress, causal filter protocol frozen
 >
-> **Следующий шаг:** выполнить preregistered `EMP-FILTER-001`; synthetic dependency passed.
+> **Следующий шаг:** P7/P8 остановлены; до нового P&L search preregister causal same-venue
+> spot-observation extension как отдельный P6 experiment.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -808,6 +809,15 @@ Stop/gate P6:
 - если filter uncertainty сравнима с или больше option-value margin
   $\theta-(\phi+c)$ и signal не превосходит controls, P&L optimization останавливается
   и результат фиксируется как negative feasibility finding.
+
+Результат P6: **completed / negative empirical feasibility**. `EMP-FILTER-001` выполнен
+из clean commit `06b5053` за `165.99 s`. Все operational gates прошли, включая zero
+future access и bitwise CUDA replay, но median posterior SD `2.80863 USDT` оказался в
+`2.759` раза выше optimistic option margin `1.01787 USDT`. PF почти не улучшил RMSE к
+causal spot reference относительно current mid (`5.65e-6` relative). Balanced model
+сохранён: lower bound OOS advantage unbalanced model `3.83e-7 nat/event` не достигает
+`0.01`. По stop rule P7/P8 не начинаются. Полный provenance и ограничения:
+[`p6-causal-efficient-price.md`](reports/p6-causal-efficient-price.md).
 
 ### P7. Event-driven backtest и accounting
 
