@@ -197,6 +197,27 @@ uv run python scripts/plot_p6m_predictions.py \
   --start-utc 2024-12-15T00:00:00Z --window-minutes 10
 ```
 
+Отдельный free-running multi-step diagnostic запускает из каждой healthy real origin
+`1024` Monte Carlo paths на 10 следующих events. После origin ни actual BBO, ни actual
+event time в trajectory не подставляются: модель сама семплирует mark, допустимый exact
+train-only bid/ask delta, waiting time и Brownian efficient-price increment. Initial
+latent state семплируется из Gaussian moment approximation сохранённых causal posterior
+mean/variance. Это
+event-index forecast с approximate frozen-hazard timing, соответствующим likelihood
+implementation, а не новая fitted model.
+
+Для первых двух минут December holdout получено 60 origins. Midpoint MAE model/persistence
+равны `1.795/1.783 USDT` на horizon 1 и `13.033/12.665 USDT` на horizon 10. Модель ожидает
+10 events в среднем за `4.24 s`, actual mean — `14.79 s`. Таким образом, она не обгоняет
+даже persistence по midpoint и генерирует события примерно в 3.5 раза быстрее наблюдений.
+
+```bash
+uv run python scripts/plot_p6m_multistep.py \
+  outputs/EMP-MARK-FILTER-001/20260812T063536959101Z-9956cb3f2077-det \
+  --start-utc 2024-12-15T00:00:00Z --window-minutes 2 \
+  --horizon-events 10 --paths 1024
+```
+
 ## Decision and next boundary
 
 P6M completed как powered negative latent-state usability result. Marked event layer можно
