@@ -769,6 +769,11 @@ UTC+8 archives `D`/`D+1`; funding полностью покрывает train с
 читались; signal, orders и P&L не рассчитывались. Полный provenance, per-day metrics и
 limitations: [`p5-okx-data-feasibility.md`](reports/p5-okx-data-feasibility.md).
 
+Консолидированная документация по официальным OKX/Binance/Bybit/BitMEX/Hyperliquid
+источникам, сторонним multi-venue vendors и фактическому local raw/derived inventory находится
+в [`market-data-sources.md`](reports/market-data-sources.md). Это documentation-only inventory:
+OKX-only protocol и завершённый project outcome не изменены.
+
 ### P6. Causal estimation of latent efficient price
 
 Primary scientific problem practical track — не threshold tuning, а оценка $X_t$.
