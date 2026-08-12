@@ -121,6 +121,21 @@ class RunSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "execution.enabled: EMP-FILTER-001"):
             validate_runspec(data)
 
+    def test_p6m_marked_filter_contracts_validate(self) -> None:
+        synthetic = load_runspec(
+            REPOSITORY_ROOT / "cfg" / "experiments" / "filter_mark_syn_001.toml"
+        )
+        empirical = load_runspec(
+            REPOSITORY_ROOT / "cfg" / "experiments" / "emp_mark_filter_001.toml"
+        )
+        self.assertEqual(synthetic.values["model"]["mark_contract"], "fixed_729_bucket_v1")
+        self.assertEqual(empirical.values["evaluation"]["planned_blocks"], 288)
+
+        data = load_data("emp_mark_filter_001.toml")
+        data["strategy"]["enabled"] = True
+        with self.assertRaisesRegex(ConfigError, "strategy.enabled: EMP-MARK-FILTER-001"):
+            validate_runspec(data)
+
     def test_unknown_simulation_field_is_rejected(self) -> None:
         data = load_data("sim_moments_002.toml")
         data["simulation"]["implicit_dt"] = 0.1

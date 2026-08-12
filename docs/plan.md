@@ -2,12 +2,12 @@
 
 > **Обновлено:** 2026-08-12
 >
-> **Ветка:** `feat/p6-causal-estimator`
+> **Ветка:** `feat/p6m-marked-filter`
 >
-> **Текущий статус:** P6 completed с negative empirical feasibility result; P7/P8 blocked
+> **Текущий статус:** P6M in progress; protocol/configs frozen before target outputs
 >
-> **Следующий шаг:** preregister P6M — marked multi-spread causal model, который включает
-> compound BBO jumps и spreads шире двух ticks; strategy/P&L по-прежнему запрещены.
+> **Следующий шаг:** implement `FILTER-MARK-SYN-001`, затем при synthetic pass выполнить
+> rolling-origin `EMP-MARK-FILTER-001`; strategy/P&L по-прежнему запрещены.
 
 ## 1. Цель, scope и критерий научного утверждения
 
@@ -401,7 +401,7 @@ source TOML после запуска не переписывается под �
 | P4C. Current implementation cleanup | Synthetic | **completed** | One active implementation per experiment; 51 tests pass; direct P4 regression accepted |
 | P5. Data feasibility и universe freeze | Empirical | **completed; passed** | Content-addressed OKX sample, quality/eligibility gate и immutable splits прошли |
 | P6. Causal efficient-price estimation | Empirical | **completed; negative feasibility** | Synthetic passed; exact six-event empirical filter failed uncertainty gate |
-| P6M. Marked multi-spread causal extension | Empirical | **planned; preregistration required** | Multi-day blocked evaluation confirms likelihood, calibration и uncertainty improvement без P&L |
+| P6M. Marked multi-spread causal extension | Empirical | **in progress; protocol/configs frozen** | Multi-day blocked evaluation confirms likelihood, calibration и uncertainty improvement без P&L |
 | P7. Event-driven backtester | Empirical | **blocked on P6M** | Accounting, timestamp, fill, cost и latency tests |
 | P8. Nested development/validation | Empirical | **blocked on P6M/P7** | Заморожена одна primary strategy и limited secondary set |
 | P9. Untouched test и robustness | Empirical | pending | Profitability gate либо честный negative result |
@@ -1134,8 +1134,8 @@ provenance. Разные information-set modes не агрегируются б�
 | `EMP-DATA-001` | `cfg/experiments/emp_data_001.toml` | OKX eligibility, quality, split freeze | passed; `20260811T232210534423Z-45f5a299b7ff-det` |
 | `FILTER-SYN-001` | `cfg/experiments/filter_syn_001.toml` | Known-$X$ six-event causal-filter recovery | passed; `20260811T234700354892Z-9e7f2939b506-det` |
 | `EMP-FILTER-001` | `cfg/experiments/emp_filter_001.toml` | Exact six-event empirical filter diagnostics | completed negative; `20260812T000514761846Z-7075bc32601b-det` |
-| `FILTER-MARK-SYN-001` | planned after P6M protocol freeze | Known-$X$ marked multi-spread recovery | planned |
-| `EMP-MARK-FILTER-001` | planned after P6M protocol/data freeze | Marked multi-spread empirical filter | planned |
+| `FILTER-MARK-SYN-001` | `cfg/experiments/filter_mark_syn_001.toml` | Known-$X$ marked multi-spread recovery | preregistered |
+| `EMP-MARK-FILTER-001` | `cfg/experiments/emp_mark_filter_001.toml` | Marked multi-spread empirical filter | preregistered; waits for synthetic pass |
 | `BT-SMOKE-001` | `cfg/experiments/bt_smoke_001.toml` | Toy ledger and no-look-ahead | pending |
 | `BT-WF-001` | `cfg/experiments/bt_wf_001.toml` | Nested development/validation | pending |
 | `BT-HOLDOUT-001` | `cfg/experiments/bt_holdout_001.toml` | Locked primary test | pending |
