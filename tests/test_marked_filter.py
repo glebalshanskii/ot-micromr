@@ -11,6 +11,8 @@ from ot_micromr.marked_filter import (
     _empirical_probability_tables,
     _inverse_softplus,
     _save_torch_artifact,
+    _superiority_row,
+    _equivalence_row,
     _marked_interval_score,
     _synthetic_mark_tables,
     _union_fieldnames,
@@ -142,6 +144,14 @@ class MarkedFilterTests(unittest.TestCase):
             _save_torch_artifact({"value": torch.tensor((1.0, 2.0))}, path)
             payload = torch.load(path, weights_only=True)
         self.assertTrue(torch.equal(payload["value"], torch.tensor((1.0, 2.0))))
+
+    def test_statistical_rows_distinguish_negative_from_imprecise(self) -> None:
+        inferior = _superiority_row(torch.full((32,), -0.5), 0.0, 0.025, "metric")
+        above = _equivalence_row(torch.full((32,), 2.0), 1.0, 0.1, 0.025, "calibration")
+        self.assertEqual(inferior["status"], "inferior")
+        self.assertLess(inferior["upper_bound"], 0.0)
+        self.assertEqual(above["status"], "above_equivalence_region")
+        self.assertGreater(above["lower_bound"], 1.1)
 
     def test_block_median_is_vectorized_and_even_count_uses_midpoint(self) -> None:
         day = EmpiricalMarkedDay(

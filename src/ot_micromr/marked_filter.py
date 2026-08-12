@@ -1596,21 +1596,29 @@ def _superiority_row(
     df = sample.numel() - 1
     critical = _student_t_critical(1.0 - alpha, df, sample.device)
     lower = mean - critical * se
+    upper = mean + critical * se
     statistic = (mean - minimum) / torch.clamp_min(se, 1e-30)
     p = 1.0 - _student_t_cdf(statistic.unsqueeze(0), df)[0]
+    inferiority_p = _student_t_cdf(statistic.unsqueeze(0), df)[0]
+    status = "inconclusive"
+    if float(lower) > minimum:
+        status = "superior"
+    elif float(upper) < minimum:
+        status = "inferior"
     return {
         "metric": metric,
         "n_blocks": int(sample.numel()),
         "mean": float(mean),
         "standard_error": float(se),
         "lower_bound": float(lower),
-        "upper_bound": "",
+        "upper_bound": float(upper),
         "minimum_effect": minimum,
         "target": "",
         "margin": "",
         "alpha": alpha,
         "p_value": float(p),
-        "status": "superior" if float(lower) > minimum else "inconclusive",
+        "inferiority_p_value": float(inferiority_p),
+        "status": status,
     }
 
 
@@ -1629,6 +1637,14 @@ def _equivalence_row(
     p_lower = 1.0 - _student_t_cdf(lower_stat.unsqueeze(0), df)[0]
     p_upper = _student_t_cdf(upper_stat.unsqueeze(0), df)[0]
     p = torch.maximum(p_lower, p_upper)
+    deviation_p = torch.minimum(p_lower, p_upper)
+    status = "inconclusive"
+    if float(lower) > target - margin and float(upper) < target + margin:
+        status = "equivalent"
+    elif float(lower) > target + margin:
+        status = "above_equivalence_region"
+    elif float(upper) < target - margin:
+        status = "below_equivalence_region"
     return {
         "metric": metric,
         "n_blocks": int(sample.numel()),
@@ -1641,9 +1657,8 @@ def _equivalence_row(
         "margin": margin,
         "alpha": alpha,
         "p_value": float(p),
-        "status": "equivalent"
-        if float(lower) > target - margin and float(upper) < target + margin
-        else "inconclusive",
+        "deviation_p_value": float(deviation_p),
+        "status": status,
     }
 
 
